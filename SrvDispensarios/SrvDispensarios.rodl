@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Library Name="Cvol" UID="{99F0C0B1-2B70-4083-9534-640A0606E47B}" Version="3.0">
+<Services>
+<Service Name="SrvDispensarios" UID="{722A2661-0D9B-46A0-803F-43F4EE1A84C7}">
+<Interfaces>
+<Interface Name="Default" UID="{F04B6AF8-A864-457C-9732-EBA22A8EF131}">
+<Operations>
+<Operation Name="DameDispensarios" UID="{28E4C288-318D-4F8C-9FC7-5E9E5B4DA1FF}">
+<Parameters>
+<Parameter Name="Result" DataType="String" Flag="Result">
+</Parameter>
+</Parameters>
+</Operation>
+</Operations>
+</Interface>
+</Interfaces>
+</Service>
+</Services>
+<Structs>
+<Struct Name="Dispensarios" UID="{8FD14C56-3FB6-4779-B842-BF63224AAF4F}" AutoCreateParams="1">
+<Elements>
+<Element Name="Campo" DataType="String">
+</Element>
+</Elements>
+</Struct>
+</Structs>
+<Enums>
+</Enums>
+<Arrays>
+</Arrays>
+</Library>

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Library Name="DmSrv" UID="{F0D2BB67-34F0-4894-AC8F-64989EA28108}" Version="3.0">
+<Services>
+<Service Name="SrvDispensarios" UID="{85DF3BBB-2A7C-4A00-A95E-C227221952BF}">
+<Interfaces>
+<Interface Name="Default" UID="{AAA51A4F-E773-4BFB-9254-9319EBF37DAD}">
+<Operations>
+<Operation Name="DameDispensarios" UID="{495465C7-929C-445E-9F5A-E480D2225940}">
+<Parameters>
+<Parameter Name="Result" DataType="String" Flag="Result">
+</Parameter>
+</Parameters>
+</Operation>
+<Operation Name="EjecutaComando" UID="{EA20A925-808B-4598-8918-018C88017F9A}">
+<Parameters>
+<Parameter Name="Result" DataType="Integer" Flag="Result">
+</Parameter>
+<Parameter Name="xCmnd" DataType="String" Flag="In" >
+</Parameter>
+</Parameters>
+</Operation>
+<Operation Name="ResultadoComando" UID="{1842C441-063A-4782-98DD-0C0E8B55A906}">
+<Parameters>
+<Parameter Name="Result" DataType="String" Flag="Result">
+</Parameter>
+<Parameter Name="xFolio" DataType="Integer" Flag="In" >
+</Parameter>
+</Parameters>
+</Operation>
+</Operations>
+</Interface>
+</Interfaces>
+</Service>
+</Services>
+<Structs>
+</Structs>
+<Enums>
+</Enums>
+<Arrays>
+</Arrays>
+</Library>
