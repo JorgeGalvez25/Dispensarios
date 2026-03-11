@@ -149,6 +149,8 @@ type
     horaActJSON     : TDateTime;
     W2WConectado    : Boolean;
     W2WInicializado : Boolean;
+    W2WEnEjecucion  : Boolean;
+    HoraInicializado: TDateTime;
     PuertoW2W       : Integer;
   public
     procedure DespliegaPosCarga(xpos: integer; swforza: boolean);
@@ -595,6 +597,8 @@ begin
   horaActJSON := 0;
   W2WConectado := False;
   W2WInicializado := False;
+  W2WEnEjecucion := False;
+  HoraInicializado := 0;
 
   { Leer puerto W2W de configuracion (default 1004) }
   PuertoW2W := 1004; // Se puede cargar de INI/BD
@@ -706,6 +710,8 @@ procedure TFDISGATEWAY.SSocketPDispClientDisconnect(Sender: TObject; Socket: TCu
 begin
   W2WConectado := False;
   W2WInicializado := False;
+  W2WEnEjecucion := False;
+  HoraInicializado := 0;
   DMCONS.AgregaLog('W2W desconectado');
   StaticText7.Caption := ' W2W: Desconectado ';
   Label4x.Caption := 'Off';
@@ -793,12 +799,21 @@ begin
 
     { Verificar estado del servicio }
     if rootJSON.Field['Estado'] <> nil then begin
-      if Integer(rootJSON.Field['Estado'].Value) >= 1 then
+      if Integer(rootJSON.Field['Estado'].Value) >= 1 then begin
         W2WInicializado := True;
+        { Estado >= 1 significa que RUN ya se ejecuto (reconexion) }
+        if not W2WEnEjecucion then begin
+          W2WEnEjecucion := True;
+          DMCONS.AgregaLog('W2W Estado >= 1 detectado - Servicio ya en ejecucion');
+        end;
+      end;
     end;
 
     { 2. Actualizar estados de posiciones desde JSON }
-    if rootJSON.Field['PosCarga'] <> nil then
+    { Solo procesar logica de negocio si el servicio ya esta en ejecucion
+      (despues de RUN). Antes de RUN los datos son ceros y causarian
+      falsas alarmas de desconexion en bitacora }
+    if W2WEnEjecucion and (rootJSON.Field['PosCarga'] <> nil) then
       ActualizaDesdeJSON;
 
     { 3. Procesar respuestas a peticiones previas }
@@ -1206,13 +1221,23 @@ begin
   if SameText(AComando, 'INITIALIZE') then begin
     if exito then begin
       W2WInicializado := True;
-      DMCONS.AgregaLog('W2W Inicializado OK');
-      EnviaComandoW2W('LOGIN', '1|1');
+      HoraInicializado := Now;
+      DMCONS.AgregaLog('W2W Inicializado OK - Enviando RUN');
       EnviaComandoW2W('RUN', '');
       EnviarPreciosIniciales;
     end
-    else
+    else begin
+      W2WInicializado := False;
       DMCONS.AgregaLog('ERROR: W2W INITIALIZE fallo: ' + AResultado);
+    end;
+  end
+  else if SameText(AComando, 'RUN') then begin
+    if exito then begin
+      W2WEnEjecucion := True;
+      DMCONS.AgregaLog('W2W RUN exitoso - Servicio en ejecucion');
+    end
+    else
+      DMCONS.AgregaLog('ERROR: W2W RUN fallo: ' + AResultado);
   end
   else if SameText(AComando, 'PRICES') then begin
     if exito then begin
@@ -1264,6 +1289,7 @@ var
   jsConfig: TlkJSONobject;
   jsConsoles, jsDisps, jsProds, jsMangueras: TlkJSONlist;
   jsConsole, jsDisp, jsProd, jsManguera: TlkJSONobject;
+  listaVars: TStringList;
   i, j: Integer;
   sConnection, variables: string;
 begin
@@ -1330,18 +1356,26 @@ begin
 
       { ----------------------------------------------------------------
         Variables de configuracion
-        UIGASWAYNE2W.Inicializar obtiene las variables asi:
-          variables := ExtraeElemStrSep(msj, 2, '|');
-        y luego las recorre con NoElemStrEnter / ExtraeElemStrEnter
-        que usan #13#10 como separador interno.
-        Por tanto las variables van en UN solo bloque separado del
-        JSON por '|', y cada variable se separa con #13#10.
+        Lee todas las variables de T_EstsIbConsola (campo memo) y
+        las envia al servicio de dispensarios. Asi se soportan
+        diferentes marcas sin tener que hardcodear variables aqui.
+        UIGASWAYNE2W.Inicializar las recibe con ExtraeElemStrSep
+        y las parsea con NoElemStrEnter / ExtraeElemStrEnter
+        usando #13#10 como separador entre cada variable=valor.
         ---------------------------------------------------------------- }
-      with DMCONS do
-        variables := 'WtwDivImporte=' + IntToStr(GtwDivImporte) + #13#10
-                   + 'WtwDivLitros=' + IntToStr(GtwDivLitros) + #13#10
-                   + 'GtwTimeout=' + IntToStr(GtwTimeOut) + #13#10
-                   + 'GtwTiempoCmnd=' + IntToStr(GtwTiempoCmnd);
+      variables := '';
+      listaVars := TStringList.Create;
+      try
+        listaVars.Assign(DMCONS.T_EstsIbConsola);
+        for i := 0 to listaVars.Count - 1 do begin
+          if Trim(listaVars[i]) = '' then Continue;
+          if variables <> '' then
+            variables := variables + #13#10;
+          variables := variables + listaVars[i];
+        end;
+      finally
+        listaVars.Free;
+      end;
 
       EnviaComandoW2W('INITIALIZE', TlkJSON.GenerateText(jsConfig) + '|' + variables);
       DMCONS.AgregaLog('INITIALIZE encolado - Puerto: ' + sConnection);
@@ -1785,6 +1819,19 @@ begin
           StaticText17.Visible := True;
         end;
       end;
+    end;
+
+    { 1b. Seguridad: si INITIALIZE fue exitoso pero RUN no responde
+      en 15 segundos, reiniciar el proceso completo }
+    if W2WConectado and W2WInicializado and (not W2WEnEjecucion)
+       and (HoraInicializado > 0)
+       and (SecondsBetween(Now, HoraInicializado) > 15) then begin
+      DMCONS.AgregaLog('ALERTA: RUN no respondio en 15s - Reiniciando INITIALIZE');
+      W2WInicializado := False;
+      W2WEnEjecucion := False;
+      HoraInicializado := 0;
+      ListaPeticiones.Clear;
+      FolioSecuencia := 0;
     end;
 
     { 2. Detectar perdida de comunicacion }
