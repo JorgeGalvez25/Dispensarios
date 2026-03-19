@@ -1,11 +1,11 @@
-unit UDISGATEWAY;
+unit UDISBRIDGE;
 {==============================================================================
-  UDISGATEWAY V2 - Comunicacion directa con UIGASWAYNE2W
+  UDISBRIDGE V2 - Comunicacion directa con servicio de dispensarios
   =============================================================================
   ELIMINADO:  ogcvgateway (OpenGas), UIGASBRIDGE, Socket1/Socket2 (TClientSocket)
-  NUEVO:      SSocketPDisp (TServerSocket) - JSON polling inverso con UIGASWAYNE2W
+  NUEVO:      SSocketPDisp (TServerSocket) - JSON polling inverso con servicio de dispensarios
   PROTOCOLO:
-    - UIGASWAYNE2W se conecta como cliente a SSocketPDisp
+    - El servicio de dispensarios se conecta como cliente a SSocketPDisp
     - Envia su estado en JSON (o "PING" si aun no esta inicializado)
     - Este servidor responde con el siguiente comando pendiente
       en formato  folio|DISPENSERS|COMANDO|parametros
@@ -25,7 +25,7 @@ const
   MCxP = 4;
 
 type
-  { ---- TPeticion: comando encolado para UIGASWAYNE2W ---- }
+  { ---- TPeticion: comando encolado para servicio de dispensarios ---- }
   TPeticion = class
     Folio    : Integer;
     Comando  : string;   // AUTHORIZE, PRICES, STOP, etc.
@@ -51,7 +51,7 @@ type
   end;
 
 type
-  TFDISGATEWAY = class(TForm)
+  TFDISBRIDGE = class(TForm)
     Panel1: TPanel;
     TabSheet2: TTabSheet;
     Panel3: TPanel;
@@ -111,7 +111,7 @@ type
     CheckBox1: TCheckBox;
     Label1: TLabel;
     Memo2: TMemo;
-    { Nuevo: ServerSocket para UIGASWAYNE2W }
+    { Nuevo: ServerSocket para servicio de dispensarios }
     SSocketPDisp: TServerSocket;
     procedure FormShow(Sender: TObject);
     procedure Timer1Timer(Sender: TObject);
@@ -147,11 +147,11 @@ type
     FolioSecuencia  : Integer;
     rootJSON        : TlkJSONobject;
     horaActJSON     : TDateTime;
-    W2WConectado    : Boolean;
-    W2WInicializado : Boolean;
-    W2WEnEjecucion  : Boolean;
+    SrvConectado    : Boolean;
+    SrvInicializado : Boolean;
+    SrvEnEjecucion  : Boolean;
     HoraInicializado: TDateTime;
-    PuertoW2W       : Integer;
+    PuertoSrv       : Integer;
   public
     procedure DespliegaPosCarga(xpos: integer; swforza: boolean);
     procedure IniciaBaseDeDatos;
@@ -163,12 +163,12 @@ type
     function PosicionDeCombustible(xpos, xcomb: integer): integer;
     procedure EnviaPreset3(var rsp: string; xcomb: integer);
     procedure EnviaPreset(var rsp: string; xcomb: integer);
-    { Nuevo: comunicacion W2W }
-    procedure EnviaComandoW2W(const Comando, Parametros: string);
+    { Nuevo: comunicacion con servicio de dispensarios }
+    procedure EnviaComandoSrv(const Comando, Parametros: string);
     procedure ProcesaRespuestasJSON(const ATexto: string);
     procedure ActualizaDesdeJSON;
     procedure ProcesaRespuestaPeticion(const AComando, AResultado: string);
-    procedure InicializaW2W;
+    procedure InicializaSrv;
     procedure EnviarPreciosIniciales;
     procedure ProcesaComandosBD;
     procedure ActualizaEstadoDispensarios;
@@ -241,7 +241,7 @@ const
   MaxEspera3 = 10;
 
 var
-  FDISGATEWAY: TFDISGATEWAY;
+  FDISBRIDGE: TFDISBRIDGE;
   TPosCarga: array[1..32] of tiposcarga;
   MaxPosCarga: integer;
   MaxPosCargaActiva: integer;
@@ -398,7 +398,7 @@ end;
   Funciones conservadas tal cual del original
 ==============================================================================}
 
-procedure TFDISGATEWAY.DespliegaPrecios;
+procedure TFDISBRIDGE.DespliegaPrecios;
 var i: integer;
 begin
   with DMCONS do begin
@@ -410,7 +410,7 @@ begin
   end;
 end;
 
-procedure TFDISGATEWAY.IniciaBaseDeDatos;
+procedure TFDISBRIDGE.IniciaBaseDeDatos;
 var i: integer;
 begin
   with DMCONS do begin
@@ -456,7 +456,7 @@ begin
   end;
 end;
 
-procedure TFDISGATEWAY.IniciaEstacion;
+procedure TFDISBRIDGE.IniciaEstacion;
 var i, j, xisla, xpos, xcomb, xnum: integer;
     existe: boolean;
 begin
@@ -583,7 +583,7 @@ end;
   FormCreate - Inicializacion
 ==============================================================================}
 
-procedure TFDISGATEWAY.FormCreate(Sender: TObject);
+procedure TFDISBRIDGE.FormCreate(Sender: TObject);
 begin
   SwReset := false;
   SwCerrar := false;
@@ -595,22 +595,22 @@ begin
   FolioSecuencia := 0;
   rootJSON := nil;
   horaActJSON := 0;
-  W2WConectado := False;
-  W2WInicializado := False;
-  W2WEnEjecucion := False;
+  SrvConectado := False;
+  SrvInicializado := False;
+  SrvEnEjecucion := False;
   HoraInicializado := 0;
 
-  { Leer puerto W2W de configuracion (default 1004) }
-  PuertoW2W := 1004; // Se puede cargar de INI/BD
+  { Leer puerto del servicio de dispensarios (default 1004) }
+  PuertoSrv := 1004; // Se puede cargar de INI/BD
 
-  StaticText7.Caption := ' W2W Direct V2 ';
+  StaticText7.Caption := ' Bridge V2 ';
 end;
 
 {==============================================================================
   FormShow - Arranque del sistema
 ==============================================================================}
 
-procedure TFDISGATEWAY.FormShow(Sender: TObject);
+procedure TFDISBRIDGE.FormShow(Sender: TObject);
 begin
   if SwInicio then begin
     try
@@ -622,8 +622,8 @@ begin
       IniciaEstacion;
       ListBox1.SetFocus;
 
-      { Configurar ServerSocket para UIGASWAYNE2W }
-      SSocketPDisp.Port := PuertoW2W;
+      { Configurar ServerSocket para servicio de dispensarios }
+      SSocketPDisp.Port := PuertoSrv;
       SSocketPDisp.ServerType := stNonBlocking;
       SSocketPDisp.OnClientConnect := SSocketPDispClientConnect;
       SSocketPDisp.OnClientDisconnect := SSocketPDispClientDisconnect;
@@ -631,10 +631,10 @@ begin
       SSocketPDisp.OnClientError := SSocketPDispClientError;
       try
         SSocketPDisp.Active := True;
-        DMCONS.AgregaLog('ServerSocket W2W activo en puerto ' + IntToStr(PuertoW2W));
+        DMCONS.AgregaLog('ServerSocket Srv activo en puerto ' + IntToStr(PuertoSrv));
       except
         on E: Exception do
-          DMCONS.AgregaLog('ERROR al activar ServerSocket W2W: ' + E.Message);
+          DMCONS.AgregaLog('ERROR al activar ServerSocket Srv: ' + E.Message);
       end;
 
       if DMCONS.TimerDisp > 0 then
@@ -656,7 +656,7 @@ end;
   FormClose / FormCloseQuery
 ==============================================================================}
 
-procedure TFDISGATEWAY.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+procedure TFDISBRIDGE.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
 begin
   if SwCerrar then
     CanClose := true
@@ -664,15 +664,15 @@ begin
     CanClose := false;
 end;
 
-procedure TFDISGATEWAY.FormClose(Sender: TObject; var Action: TCloseAction);
+procedure TFDISBRIDGE.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
   Timer1.Enabled := false;
 
-  { Enviar HALT y SHUTDOWN a UIGASWAYNE2W }
-  if W2WConectado then begin
+  { Enviar HALT y SHUTDOWN al servicio de dispensarios }
+  if SrvConectado then begin
     try
-      EnviaComandoW2W('HALT', '');
-      EnviaComandoW2W('SHUTDOWN', '');
+      EnviaComandoSrv('HALT', '');
+      EnviaComandoSrv('SHUTDOWN', '');
       Sleep(500);
     except end;
   end;
@@ -693,27 +693,27 @@ begin
 end;
 
 {==============================================================================
-  Eventos del ServerSocket - Conexion con UIGASWAYNE2W
+  Eventos del ServerSocket - Conexion con servicio de dispensarios
 ==============================================================================}
 
-procedure TFDISGATEWAY.SSocketPDispClientConnect(Sender: TObject; Socket: TCustomWinSocket);
+procedure TFDISBRIDGE.SSocketPDispClientConnect(Sender: TObject; Socket: TCustomWinSocket);
 begin
-  W2WConectado := True;
+  SrvConectado := True;
   ContadorAlarma := 0;
-  DMCONS.AgregaLog('W2W conectado desde ' + Socket.RemoteAddress);
-  StaticText7.Caption := ' W2W: ' + Socket.RemoteAddress;
+  DMCONS.AgregaLog('Srv dispensarios conectado desde ' + Socket.RemoteAddress);
+  StaticText7.Caption := ' Srv: ' + Socket.RemoteAddress;
   Label4x.Caption := 'On';
   Label4x.Visible := true;
 end;
 
-procedure TFDISGATEWAY.SSocketPDispClientDisconnect(Sender: TObject; Socket: TCustomWinSocket);
+procedure TFDISBRIDGE.SSocketPDispClientDisconnect(Sender: TObject; Socket: TCustomWinSocket);
 begin
-  W2WConectado := False;
-  W2WInicializado := False;
-  W2WEnEjecucion := False;
+  SrvConectado := False;
+  SrvInicializado := False;
+  SrvEnEjecucion := False;
   HoraInicializado := 0;
-  DMCONS.AgregaLog('W2W desconectado');
-  StaticText7.Caption := ' W2W: Desconectado ';
+  DMCONS.AgregaLog('Srv dispensarios desconectado');
+  StaticText7.Caption := ' Srv: Desconectado ';
   Label4x.Caption := 'Off';
   if Assigned(ListaPeticiones) then begin
     ListaPeticiones.Clear;
@@ -721,17 +721,17 @@ begin
   end;
 end;
 
-procedure TFDISGATEWAY.SSocketPDispClientError(Sender: TObject;
+procedure TFDISBRIDGE.SSocketPDispClientError(Sender: TObject;
   Socket: TCustomWinSocket; ErrorEvent: TErrorEvent; var ErrorCode: Integer);
 begin
-  DMCONS.AgregaLog('Error Socket W2W: Codigo=' + IntToStr(ErrorCode));
+  DMCONS.AgregaLog('Error Socket Srv: Codigo=' + IntToStr(ErrorCode));
   ErrorCode := 0;
 end;
 
 {==============================================================================
-  SSocketPDispClientRead - Recepcion de datos de UIGASWAYNE2W
+  SSocketPDispClientRead - Recepcion de datos del servicio de dispensarios
   =============================================================================
-  UIGASWAYNE2W envia:
+  El servicio de dispensarios envia:
     - "PING"    si aun no esta inicializado
     - JSON      con estado completo si ya esta corriendo
   Este servidor responde con:
@@ -739,7 +739,7 @@ end;
     - "0|NOTHING"                            si no hay comandos
 ==============================================================================}
 
-procedure TFDISGATEWAY.SSocketPDispClientRead(Sender: TObject; Socket: TCustomWinSocket);
+procedure TFDISBRIDGE.SSocketPDispClientRead(Sender: TObject; Socket: TCustomWinSocket);
 var
   respTxt: string;
   p: TPeticion;
@@ -754,9 +754,9 @@ begin
       ProcesaRespuestasJSON(respTxt)
     else begin
       { En el primer PING enviamos INITIALIZE si aun no se ha hecho }
-      if not W2WInicializado then begin
+      if not SrvInicializado then begin
         DMCONS.AgregaLog('PING recibido - Enviando INITIALIZE');
-        InicializaW2W;
+        InicializaSrv;
       end;
     end;
 
@@ -775,10 +775,10 @@ begin
 end;
 
 {==============================================================================
-  ProcesaRespuestasJSON - Parsea JSON de UIGASWAYNE2W y actualiza estados
+  ProcesaRespuestasJSON - Parsea JSON de servicio de dispensarios y actualiza estados
 ==============================================================================}
 
-procedure TFDISGATEWAY.ProcesaRespuestasJSON(const ATexto: string);
+procedure TFDISBRIDGE.ProcesaRespuestasJSON(const ATexto: string);
 var
   jArray, jItem: TlkJSONbase;
   idx, folioResp: Integer;
@@ -800,11 +800,11 @@ begin
     { Verificar estado del servicio }
     if rootJSON.Field['Estado'] <> nil then begin
       if Integer(rootJSON.Field['Estado'].Value) >= 1 then begin
-        W2WInicializado := True;
+        SrvInicializado := True;
         { Estado >= 1 significa que RUN ya se ejecuto (reconexion) }
-        if not W2WEnEjecucion then begin
-          W2WEnEjecucion := True;
-          DMCONS.AgregaLog('W2W Estado >= 1 detectado - Servicio ya en ejecucion');
+        if not SrvEnEjecucion then begin
+          SrvEnEjecucion := True;
+          DMCONS.AgregaLog('Srv Estado >= 1 detectado - Servicio ya en ejecucion');
         end;
       end;
     end;
@@ -813,7 +813,7 @@ begin
     { Solo procesar logica de negocio si el servicio ya esta en ejecucion
       (despues de RUN). Antes de RUN los datos son ceros y causarian
       falsas alarmas de desconexion en bitacora }
-    if W2WEnEjecucion and (rootJSON.Field['PosCarga'] <> nil) then
+    if SrvEnEjecucion and (rootJSON.Field['PosCarga'] <> nil) then
       ActualizaDesdeJSON;
 
     { 3. Procesar respuestas a peticiones previas }
@@ -849,11 +849,11 @@ end;
 {==============================================================================
   ActualizaDesdeJSON - Logica de negocio (reemplaza ProcesaLinea)
   =============================================================================
-  Lee el JSON con el estado completo de UIGASWAYNE2W y ejecuta toda la
+  Lee el JSON con el estado completo de servicio de dispensarios y ejecuta toda la
   logica de negocio que antes hacian los comandos B, A, @, C del gateway.
 ==============================================================================}
 
-procedure TFDISGATEWAY.ActualizaDesdeJSON;
+procedure TFDISBRIDGE.ActualizaDesdeJSON;
 var
   posList: TlkJSONlist;
   posObj: TlkJSONobject;
@@ -916,7 +916,7 @@ begin
                  for j := 1 to MCxP do SwTotales[j] := true;
                  TotsFinv := False;
                  { Solicitar totalizadores }
-                 EnviaComandoW2W('TOTALS', IntToStr(xpos));
+                 EnviaComandoSrv('TOTALS', IntToStr(xpos));
                end;
                if swprec then swprec := false;
                if estatusant = 0 then
@@ -941,7 +941,7 @@ begin
                { Control aros magneticos }
                if SwArosMag then begin
                  if not DMCONS.ConexionArosActiva(xpos) then begin
-                   EnviaComandoW2W('STOP', IntToStr(xpos));
+                   EnviaComandoSrv('STOP', IntToStr(xpos));
                    SwArosMag_Stop := true;
                  end;
                end;
@@ -955,14 +955,14 @@ begin
              end;
           6: begin
                descestat := 'Cerrada';
-               EnviaComandoW2W('UNBLOCK', IntToStr(xpos));
+               EnviaComandoSrv('UNBLOCK', IntToStr(xpos));
              end;
           8: begin
                descestat := 'Detenida';
                if SwArosMag_Stop then begin
                  if DMCONS.ControlArosMagneticosRecon(xpos, xmang, xcomb, xc) then begin
                    if (xmang = aros_mang) and (xcomb = aros_cte) and (xc = aros_vehi) and (aros_cont < DMCONS.ReconexionesAros) then begin
-                     EnviaComandoW2W('START', IntToStr(xpos));
+                     EnviaComandoSrv('START', IntToStr(xpos));
                      SwArosMag_Stop := false;
                      inc(aros_cont);
                    end;
@@ -974,7 +974,7 @@ begin
                swautorizada := true;
                if SwArosMag then begin
                  if not DMCONS.ConexionArosActiva(xpos) then begin
-                   EnviaComandoW2W('STOP', IntToStr(xpos));
+                   EnviaComandoSrv('STOP', IntToStr(xpos));
                  end;
                end;
              end;
@@ -987,7 +987,7 @@ begin
       with TPosCarga[xpos] do begin
         case estatus of
           6: if SwInicio then begin
-               EnviaComandoW2W('UNBLOCK', IntToStr(xpos));
+               EnviaComandoSrv('UNBLOCK', IntToStr(xpos));
                SwInicio := false;
              end;
           4, 5: if (not SwDesHabilitado) and (not swautorizada) and ((now - HoraOcc) > ((1/86400) * 5)) then begin
@@ -1048,7 +1048,7 @@ begin
           if (DMCONS.ControlAros = 'Si') and (importe < 0.01) and (not swarosmag) and (ModoOpera = 'Normal') then begin
             swarosmag := DMCONS.ControlArosMagneticos2(xpos, aros_mang, aros_cte, aros_vehi);
             if swarosmag then
-              EnviaComandoW2W('STOP', IntToStr(xpos));
+              EnviaComandoSrv('STOP', IntToStr(xpos));
           end;
           DespliegaPosCarga(xpos, true);
         end
@@ -1084,7 +1084,7 @@ begin
           if (SecondsBetween(UltimoCmnd, Now) > 3) and (finventa = 0) and (estatus = 3) then begin
             finventa := 0;
             TipoPago := 0;
-            EnviaComandoW2W('PAYMENT', IntToStr(xpos) + '|0');
+            EnviaComandoSrv('PAYMENT', IntToStr(xpos) + '|0');
             UltimoCmnd := Now;
           end;
 
@@ -1142,7 +1142,7 @@ end;
   ActualizaEstadoDispensarios - Escribe estado en T_ConsIb (paso 3 original)
 ==============================================================================}
 
-procedure TFDISGATEWAY.ActualizaEstadoDispensarios;
+procedure TFDISBRIDGE.ActualizaEstadoDispensarios;
 var xpos, xcomb: integer;
     lin, xestado, xmodo, ss: string;
 begin
@@ -1183,10 +1183,10 @@ begin
 end;
 
 {==============================================================================
-  EnviaComandoW2W - Encola un comando para UIGASWAYNE2W
+  EnviaComandoSrv - Encola un comando para servicio de dispensarios
 ==============================================================================}
 
-procedure TFDISGATEWAY.EnviaComandoW2W(const Comando, Parametros: string);
+procedure TFDISBRIDGE.EnviaComandoSrv(const Comando, Parametros: string);
 var
   p: TPeticion;
 begin
@@ -1204,14 +1204,14 @@ begin
   p.Tries := 0;
   ListaPeticiones.Push(p);
 
-  DMCONS.AgregaLog('CMD W2W [' + IntToStr(p.Folio) + ']: ' + p.Peticion);
+  DMCONS.AgregaLog('CMD Srv [' + IntToStr(p.Folio) + ']: ' + p.Peticion);
 end;
 
 {==============================================================================
   ProcesaRespuestaPeticion - Maneja resultados de comandos asincronos
 ==============================================================================}
 
-procedure TFDISGATEWAY.ProcesaRespuestaPeticion(const AComando, AResultado: string);
+procedure TFDISBRIDGE.ProcesaRespuestaPeticion(const AComando, AResultado: string);
 var
   exito: Boolean;
 begin
@@ -1220,24 +1220,24 @@ begin
 
   if SameText(AComando, 'INITIALIZE') then begin
     if exito then begin
-      W2WInicializado := True;
+      SrvInicializado := True;
       HoraInicializado := Now;
-      DMCONS.AgregaLog('W2W Inicializado OK - Enviando RUN');
-      EnviaComandoW2W('RUN', '');
+      DMCONS.AgregaLog('Srv Inicializado OK - Enviando RUN');
+      EnviaComandoSrv('RUN', '');
       EnviarPreciosIniciales;
     end
     else begin
-      W2WInicializado := False;
-      DMCONS.AgregaLog('ERROR: W2W INITIALIZE fallo: ' + AResultado);
+      SrvInicializado := False;
+      DMCONS.AgregaLog('ERROR: Srv INITIALIZE fallo: ' + AResultado);
     end;
   end
   else if SameText(AComando, 'RUN') then begin
     if exito then begin
-      W2WEnEjecucion := True;
-      DMCONS.AgregaLog('W2W RUN exitoso - Servicio en ejecucion');
+      SrvEnEjecucion := True;
+      DMCONS.AgregaLog('Srv RUN exitoso - Servicio en ejecucion');
     end
     else
-      DMCONS.AgregaLog('ERROR: W2W RUN fallo: ' + AResultado);
+      DMCONS.AgregaLog('ERROR: Srv RUN fallo: ' + AResultado);
   end
   else if SameText(AComando, 'PRICES') then begin
     if exito then begin
@@ -1281,10 +1281,10 @@ begin
 end;
 
 {==============================================================================
-  InicializaW2W - Construye y envia el JSON de INITIALIZE
+  InicializaSrv - Construye y envia el JSON de INITIALIZE
 ==============================================================================}
 
-procedure TFDISGATEWAY.InicializaW2W;
+procedure TFDISBRIDGE.InicializaSrv;
 var
   jsConfig: TlkJSONobject;
   jsConsoles, jsDisps, jsProds, jsMangueras: TlkJSONlist;
@@ -1298,7 +1298,7 @@ begin
     try
       { ----------------------------------------------------------------
         Consoles (puerto serial)
-        UIGASWAYNE2W.Inicializar lee: js.Field['Consoles']
+        El servicio de dispensarios lee: js.Field['Consoles']
         Cada consola debe tener un campo 'Connection' con string
         formato CSV: "ConsolaId,COMx,BaudRate,Paridad,DataBits,StopBits"
         que IniciaPSerial parsea con ExtraeElemStrSep(datosPuerto,N,',')
@@ -1318,7 +1318,7 @@ begin
 
       { ----------------------------------------------------------------
         Dispensers
-        UIGASWAYNE2W.Inicializar lee: js.Field['Dispensers']
+        El servicio de dispensarios lee: js.Field['Dispensers']
         Cada dispensario: DispenserId, Hoses[] con HoseId y ProductId
         ---------------------------------------------------------------- }
       jsDisps := TlkJSONlist.Create;
@@ -1340,7 +1340,7 @@ begin
 
       { ----------------------------------------------------------------
         Products
-        UIGASWAYNE2W.Inicializar lee: js.Field['Products']
+        El servicio de dispensarios lee: js.Field['Products']
         Cada producto: ProductId y Price (NO 'Precio')
         ---------------------------------------------------------------- }
       jsProds := TlkJSONlist.Create;
@@ -1359,7 +1359,7 @@ begin
         Lee todas las variables de T_EstsIbConsola (campo memo) y
         las envia al servicio de dispensarios. Asi se soportan
         diferentes marcas sin tener que hardcodear variables aqui.
-        UIGASWAYNE2W.Inicializar las recibe con ExtraeElemStrSep
+        El servicio de dispensarios las recibe con ExtraeElemStrSep
         y las parsea con NoElemStrEnter / ExtraeElemStrEnter
         usando #13#10 como separador entre cada variable=valor.
         ---------------------------------------------------------------- }
@@ -1377,14 +1377,14 @@ begin
         listaVars.Free;
       end;
 
-      EnviaComandoW2W('INITIALIZE', TlkJSON.GenerateText(jsConfig) + '|' + variables);
+      EnviaComandoSrv('INITIALIZE', TlkJSON.GenerateText(jsConfig) + '|' + variables);
       DMCONS.AgregaLog('INITIALIZE encolado - Puerto: ' + sConnection);
     finally
       jsConfig.Free;
     end;
   except
     on E: Exception do
-      DMCONS.AgregaLog('ERROR InicializaW2W: ' + E.Message);
+      DMCONS.AgregaLog('ERROR InicializaSrv: ' + E.Message);
   end;
 end;
 
@@ -1392,13 +1392,13 @@ end;
   EnviarPreciosIniciales
 ==============================================================================}
 
-procedure TFDISGATEWAY.EnviarPreciosIniciales;
+procedure TFDISBRIDGE.EnviarPreciosIniciales;
 var i: Integer;
 begin
   with DMCONS do begin
     for i := 1 to MaxComb do with TabComb[i] do
       if Activo and (Precio > 0) then
-        EnviaComandoW2W('PRICES', IntToStr(i) + '|' + FormatFloat('0.00', Precio));
+        EnviaComandoSrv('PRICES', IntToStr(i) + '|' + FormatFloat('0.00', Precio));
   end;
 end;
 
@@ -1406,7 +1406,7 @@ end;
   ProcesaComandosBD - Procesa comandos de BD (paso 5 original de ProcesaLinea)
 ==============================================================================}
 
-procedure TFDISGATEWAY.ProcesaComandosBD;
+procedure TFDISBRIDGE.ProcesaComandosBD;
 var xcmnd, xpos, xcomb, xp, xfolio: integer;
     ss, rsp: string;
 begin
@@ -1428,7 +1428,7 @@ begin
         { PAROTOTAL }
         if ss = 'PAROTOTAL' then begin
           rsp := 'OK';
-          EnviaComandoW2W('HALT', '');
+          EnviaComandoSrv('HALT', '');
         end
         { CERRAR }
         else if ss = 'CERRAR' then begin
@@ -1447,13 +1447,13 @@ begin
             for xpos := 1 to MaxPosCarga do
               TPosCarga[xpos].ModoOpera := 'Prepago';
             ActivaModoPrepago(0);
-            EnviaComandoW2W('SELFSERVICE', '0');
+            EnviaComandoSrv('SELFSERVICE', '0');
             rsp := 'OK';
           end
           else if (xpos in [1..maxposcarga]) then begin
             TPosCarga[xpos].ModoOpera := 'Prepago';
             ActivaModoPrepago(xpos);
-            EnviaComandoW2W('SELFSERVICE', IntToStr(xpos));
+            EnviaComandoSrv('SELFSERVICE', IntToStr(xpos));
             rsp := 'OK';
           end;
         end
@@ -1464,13 +1464,13 @@ begin
             for xpos := 1 to MaxPosCarga do
               TPosCarga[xpos].ModoOpera := 'Normal';
             DesActivaModoPrepago(0);
-            EnviaComandoW2W('FULLSERVICE', '0');
+            EnviaComandoSrv('FULLSERVICE', '0');
             rsp := 'OK';
           end
           else if (xpos in [1..maxposcarga]) then begin
             TPosCarga[xpos].ModoOpera := 'Normal';
             DesActivaModoPrepago(xpos);
-            EnviaComandoW2W('FULLSERVICE', IntToStr(xpos));
+            EnviaComandoSrv('FULLSERVICE', IntToStr(xpos));
             rsp := 'OK';
           end;
         end
@@ -1570,7 +1570,7 @@ begin
               TPosCarga[xpos].tipopago := StrToIntDef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 3, ' '), 0);
               if (TPosCarga[xpos].Estatus in [1, 3]) then begin
                 TPosCarga[xpos].finventa := 0;
-                EnviaComandoW2W('PAYMENT', IntToStr(xpos) + '|' + IntToStr(TPosCarga[xpos].tipopago));
+                EnviaComandoSrv('PAYMENT', IntToStr(xpos) + '|' + IntToStr(TPosCarga[xpos].tipopago));
                 { Actualizar tipo de pago de ultima venta }
                 try
                   try
@@ -1620,7 +1620,7 @@ begin
           xpos := strtointdef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 2, ' '), 0);
           if xpos in [1..MaxPosCarga] then begin
             TPosCarga[xpos].SwDesHabilitado := true;
-            EnviaComandoW2W('BLOCK', IntToStr(xpos));
+            EnviaComandoSrv('BLOCK', IntToStr(xpos));
           end;
         end
         { HPC - Habilita Posicion }
@@ -1629,7 +1629,7 @@ begin
           xpos := strtointdef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 2, ' '), 0);
           if xpos in [1..MaxPosCarga] then begin
             TPosCarga[xpos].SwDesHabilitado := false;
-            EnviaComandoW2W('UNBLOCK', IntToStr(xpos));
+            EnviaComandoSrv('UNBLOCK', IntToStr(xpos));
           end;
         end
         { DVC / PARAR }
@@ -1638,7 +1638,7 @@ begin
           xpos := strtointdef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 2, ' '), 0);
           if xpos in [1..MaxPosCarga] then begin
             if (TPosCarga[xpos].estatus in [2, 9]) then begin
-              EnviaComandoW2W('STOP', IntToStr(xpos));
+              EnviaComandoSrv('STOP', IntToStr(xpos));
               if TPosCarga[xpos].estatus = 9 then
                 TPosCarga[xpos].tipopago := 0;
             end;
@@ -1650,7 +1650,7 @@ begin
           xpos := strtointdef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 2, ' '), 0);
           if xpos in [1..MaxPosCarga] then
             if (TPosCarga[xpos].estatus in [2, 8]) then
-              EnviaComandoW2W('START', IntToStr(xpos));
+              EnviaComandoSrv('START', IntToStr(xpos));
         end
         { CORTE }
         else if ss = 'CORTE' then begin
@@ -1717,10 +1717,10 @@ end;
 
 {==============================================================================
   EnviaPreset3 - Autorizacion de carga
-  Ahora usa EnviaComandoW2W('AUTHORIZE',...) en lugar de ComandoConsolaBuff
+  Ahora usa EnviaComandoSrv('AUTHORIZE',...) en lugar de ComandoConsolaBuff
 ==============================================================================}
 
-procedure TFDISGATEWAY.EnviaPreset3(var rsp: string; xcomb: integer);
+procedure TFDISBRIDGE.EnviaPreset3(var rsp: string; xcomb: integer);
 var xpos, xc, xp: integer;
     ss, xprodauto, efv: string;
     swlitros: boolean;
@@ -1739,7 +1739,7 @@ begin
       exit;
     end;
     if TPosCarga[xpos].estatus = 9 then
-      EnviaComandoW2W('STOP', IntToStr(xpos));
+      EnviaComandoSrv('STOP', IntToStr(xpos));
 
     if TPosCarga[xpos].FinVenta = 1 then
       efv := '2'
@@ -1759,7 +1759,7 @@ begin
         xprodauto := xprodauto; // mantener
       if SnImporte > 99999 then SnImporte := 99999;
 
-      EnviaComandoW2W('AUTHORIZE',
+      EnviaComandoSrv('AUTHORIZE',
         IntToStr(xpos) + '|' +
         FormatFloat('0.00', SnImporte) + '|' +
         '1|' + xprodauto + '|' + efv);
@@ -1770,7 +1770,7 @@ begin
     end
     else begin
       { PRESET EN LITROS }
-      EnviaComandoW2W('AUTHORIZE',
+      EnviaComandoSrv('AUTHORIZE',
         IntToStr(xpos) + '|' +
         FormatFloat('0.000', SnLitros) + '|' +
         '2|' + xprodauto + '|' + efv);
@@ -1789,7 +1789,7 @@ begin
   end;
 end;
 
-procedure TFDISGATEWAY.EnviaPreset(var rsp: string; xcomb: integer);
+procedure TFDISBRIDGE.EnviaPreset(var rsp: string; xcomb: integer);
 begin
   EnviaPreset3(rsp, xcomb);
 end;
@@ -1797,11 +1797,11 @@ end;
 {==============================================================================
   Timer1Timer - Timer principal simplificado
   =============================================================================
-  Ya NO hace polling activo. UIGASWAYNE2W inicia la comunicacion.
+  Ya NO hace polling activo. servicio de dispensarios inicia la comunicacion.
   Solo monitorea la conexion y ejecuta tareas periodicas.
 ==============================================================================}
 
-procedure TFDISGATEWAY.Timer1Timer(Sender: TObject);
+procedure TFDISBRIDGE.Timer1Timer(Sender: TObject);
 var i: integer;
 const tmSegundo = 1 / 86400;
       tmMinuto = 60 / 86400;
@@ -1810,9 +1810,9 @@ begin
     { 1. Verificar ServerSocket activo }
     if not SSocketPDisp.Active then begin
       try
-        SSocketPDisp.Port := PuertoW2W;
+        SSocketPDisp.Port := PuertoSrv;
         SSocketPDisp.Active := True;
-        DMCONS.AgregaLog('ServerSocket W2W reactivado');
+        DMCONS.AgregaLog('ServerSocket Srv reactivado');
       except
         on E: Exception do begin
           StaticText17.Caption := 'Error ServerSocket: ' + E.Message;
@@ -1823,12 +1823,12 @@ begin
 
     { 1b. Seguridad: si INITIALIZE fue exitoso pero RUN no responde
       en 15 segundos, reiniciar el proceso completo }
-    if W2WConectado and W2WInicializado and (not W2WEnEjecucion)
+    if SrvConectado and SrvInicializado and (not SrvEnEjecucion)
        and (HoraInicializado > 0)
        and (SecondsBetween(Now, HoraInicializado) > 15) then begin
       DMCONS.AgregaLog('ALERTA: RUN no respondio en 15s - Reiniciando INITIALIZE');
-      W2WInicializado := False;
-      W2WEnEjecucion := False;
+      SrvInicializado := False;
+      SrvEnEjecucion := False;
       HoraInicializado := 0;
       ListaPeticiones.Clear;
       FolioSecuencia := 0;
@@ -1862,7 +1862,7 @@ begin
     end;
 
     if not StaticText9.Visible then begin
-      StaticText9.Caption := 'Puerto W2W: ' + IntToStr(PuertoW2W);
+      StaticText9.Caption := 'Puerto Srv: ' + IntToStr(PuertoSrv);
       StaticText9.Visible := true;
     end;
 
@@ -1872,7 +1872,7 @@ begin
       if ContReset = 90 then begin
         DMCONS.DBGASCON.Connected := false;
         swcerrar := true;
-        FDISGATEWAY.Close;
+        FDISBRIDGE.Close;
       end;
     end;
     if SwCerrar then Close;
@@ -1891,7 +1891,7 @@ begin
         for i := 1 to MaxComb do with TabComb[i] do if Activo then begin
           if AplicaPrecio then begin
             PrecioCombActual := i;
-            EnviaComandoW2W('PRICES', IntToStr(i) + '|' + FormatFloat('0.00', Precio));
+            EnviaComandoSrv('PRICES', IntToStr(i) + '|' + FormatFloat('0.00', Precio));
           end;
         end;
         CargaPreciosFH(Now, true);
@@ -1903,7 +1903,7 @@ begin
     if NotificationIcon1.Tag = 0 then begin
       NotificationIcon1.Tag := 1;
       FDISMENU.Visible := false;
-      FDISGATEWAY.Visible := false;
+      FDISBRIDGE.Visible := false;
       NotificationIcon1.Show;
     end;
   end;
@@ -1913,7 +1913,7 @@ end;
   DespliegaPosCarga - Visualizacion (conservada del original)
 ==============================================================================}
 
-procedure TFDISGATEWAY.DespliegaPosCarga(xpos: integer; swforza: boolean);
+procedure TFDISBRIDGE.DespliegaPosCarga(xpos: integer; swforza: boolean);
 var i, ii, xp, rango, posi, posf, xcomb, xc, apunt, xmang: integer;
     xnombre: string;
     xdiflts: real;
@@ -1924,7 +1924,7 @@ begin
     if rango = 0 then rango := 1;
     posi := rango * 4 - 3;
     posf := rango * 4;
-    with TPosCarga[xpos], FDISGATEWAY do begin
+    with TPosCarga[xpos], FDISBRIDGE do begin
       xcomb := CombustibleEnPosicion(xpos, PosActual);
       if xcomb in [1..MaxComb] then
         xnombre := DMCONS.TabComb[xcomb].Nombre;
@@ -2053,7 +2053,7 @@ begin
               if (lcLicTemporal) and (date > lcLicVence) then begin
                 MensajeErr('Licencia vencida. Llame a su distribuidor');
                 swcerrar := true;
-                FDISGATEWAY.Close;
+                FDISBRIDGE.Close;
               end;
             except
               on e: Exception do AgregaLog('Error al guardar venta: ' + e.Message);
@@ -2132,7 +2132,7 @@ end;
   Funciones de utilidad conservadas del original
 ==============================================================================}
 
-function TFDISGATEWAY.CombustibleEnPosicion(xpos, xposcarga: integer): integer;
+function TFDISBRIDGE.CombustibleEnPosicion(xpos, xposcarga: integer): integer;
 var i: integer;
 begin
   with TPosCarga[xpos] do begin
@@ -2142,7 +2142,7 @@ begin
   end;
 end;
 
-function TFDISGATEWAY.PosicionDeCombustible(xpos, xcomb: integer): integer;
+function TFDISBRIDGE.PosicionDeCombustible(xpos, xcomb: integer): integer;
 var i: integer;
 begin
   with TPosCarga[xpos] do begin
@@ -2155,7 +2155,7 @@ begin
   end;
 end;
 
-procedure TFDISGATEWAY.registro(valor: integer; variable: string);
+procedure TFDISBRIDGE.registro(valor: integer; variable: string);
 var
   Reg: TRegistry;
 begin
@@ -2170,7 +2170,7 @@ begin
   end;
 end;
 
-procedure TFDISGATEWAY.lee_registro;
+procedure TFDISBRIDGE.lee_registro;
 var
   Reg: TRegistry;
   estado: integer;
@@ -2198,7 +2198,7 @@ begin
   end;
 end;
 
-procedure TFDISGATEWAY.ListBox1Click(Sender: TObject);
+procedure TFDISBRIDGE.ListBox1Click(Sender: TObject);
 var xp: integer;
 begin
   { Limpiar consola visual }
@@ -2218,29 +2218,29 @@ begin
     DespliegaPosCarga(xp, true);
 end;
 
-procedure TFDISGATEWAY.Restaurar1Click(Sender: TObject);
+procedure TFDISBRIDGE.Restaurar1Click(Sender: TObject);
 begin
-  FDISGATEWAY.Visible := true;
+  FDISBRIDGE.Visible := true;
 end;
 
-procedure TFDISGATEWAY.NotificationIcon1DblClick(Sender: TObject);
+procedure TFDISBRIDGE.NotificationIcon1DblClick(Sender: TObject);
 begin
   Restaurar1Click(Sender);
 end;
 
-procedure TFDISGATEWAY.BitBtn3Click(Sender: TObject);
+procedure TFDISBRIDGE.BitBtn3Click(Sender: TObject);
 begin
   Visible := false;
   NotificationIcon1.Show;
 end;
 
-procedure TFDISGATEWAY.Button1Click(Sender: TObject);
+procedure TFDISBRIDGE.Button1Click(Sender: TObject);
 begin
-  DMCONS.AgregaLog('Version: UDISGATEWAY_V2_W2W_Direct');
+  DMCONS.AgregaLog('Version: UDISBRIDGE_V2_Direct');
   DMCONS.ListaLog.SaveToFile('\ImagenCo\Log' + FiltraStrNum(FechaHoraToStr(Now)) + '.Txt');
 end;
 
-procedure TFDISGATEWAY.Button3Click(Sender: TObject);
+procedure TFDISBRIDGE.Button3Click(Sender: TObject);
 begin
   DMCONS.ListaLogCmnd.SaveToFile('\ImagenCo\LogCmnd' + FiltraStrNum(FechaHoraToStr(Now)) + '.Txt');
 end;

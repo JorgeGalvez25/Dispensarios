@@ -14,7 +14,8 @@ uses
   DmSrv_Invk in 'DmSrv_Invk.pas',
   SrvDispensarios_Impl in 'SrvDispensarios_Impl.pas' {SrvDispensarios: TRORemoteDataModule},
   Hashes in 'Hashes.pas',
-  UDISGATEWAY in 'UDISGATEWAY.pas' {FDISGATEWAY};
+  UDISGATEWAY in 'UDISGATEWAY.pas' {FDISGATEWAY},
+  UDISBRIDGE in 'UDISBRIDGE.pas' {FDISBRIDGE};
 
 {#ROGEN:PDISMENU.rodl} // RemObjects: Careful, do not remove!
 {$R RODLFile.res}
@@ -36,6 +37,7 @@ begin
   Application.Title := 'Consola de Dispensarios';
   Application.CreateForm(TFDISMENU, FDISMENU);
   Application.CreateForm(TDMCONS, DMCONS);
+  Application.CreateForm(TFDISBRIDGE, FDISBRIDGE);
   Application.Run;
 end.
 

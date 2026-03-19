@@ -1,10 +1,10 @@
-object FDISGATEWAY: TFDISGATEWAY
+object FDISBRIDGE: TFDISBRIDGE
   Left = 212
   Top = 131
   BorderStyle = bsSingle
   Caption = 
-    'I-Gas Consola de Dispensarios Versi'#243'n 4.3.1   -   I-Gas Volum'#233'tr' +
-    'ico'
+    'I-Gas Consola de Dispensarios V2 (Bridge)   -   I-Gas Vo' +
+    'lum'#233'trico'
   ClientHeight = 517
   ClientWidth = 711
   Color = clBtnFace
@@ -78,11 +78,11 @@ object FDISGATEWAY: TFDISGATEWAY
     object StaticText8: TStaticText
       Left = 9
       Top = 7
-      Width = 74
+      Width = 90
       Height = 24
       BorderStyle = sbsSunken
-      Caption = 'Gateway'
-      Color = clOlive
+      Caption = 'Bridge'
+      Color = clNavy
       Font.Charset = DEFAULT_CHARSET
       Font.Color = clWhite
       Font.Height = -16
@@ -4234,10 +4234,14 @@ object FDISGATEWAY: TFDISGATEWAY
       OnClick = Restaurar1Click
     end
   end
-  object Timer3: TTimer
-    Enabled = False
-    Interval = 200
-    OnTimer = Timer3Timer
+  object SSocketPDisp: TServerSocket
+    Active = False
+    Port = 1004
+    ServerType = stNonBlocking
+    OnClientConnect = SSocketPDispClientConnect
+    OnClientDisconnect = SSocketPDispClientDisconnect
+    OnClientRead = SSocketPDispClientRead
+    OnClientError = SSocketPDispClientError
     Left = 324
     Top = 328
   end

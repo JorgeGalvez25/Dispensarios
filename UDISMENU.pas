@@ -21,7 +21,7 @@ var
 
 implementation
 
-uses DDMCONS, ULIBDATABASE, ULIBGRAL, ULIBLICENCIAS, ULIBPRINT, UDISGATEWAY;
+uses DDMCONS, ULIBDATABASE, ULIBGRAL, ULIBLICENCIAS, ULIBPRINT, UDISBRIDGE;
 
 {$R *.dfm}
 
@@ -80,8 +80,8 @@ begin
       ConectaBaseDatos;
       IniciaBaseDeDatos;
       numerr:=2;
-      Application.CreateForm(TFDISGATEWAY,FDISGATEWAY);
-      FDISGATEWAY.Show;
+      Application.CreateForm(TFDISBRIDGE,FDISBRIDGE);
+      FDISBRIDGE.Show;
     except
       case numerr of
         1   :MensajeErr('Error al inicializar Base de Datos');
