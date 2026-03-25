@@ -164,7 +164,6 @@ type
     function CombustibleEnPosicion(xpos, xposcarga: integer): integer;
     function PosicionDeCombustible(xpos, xcomb: integer): integer;
     procedure EnviaPreset3(var rsp: string; xcomb: integer);
-    procedure EnviaPreset(var rsp: string; xcomb: integer);
     { Nuevo: comunicacion con servicio de dispensarios }
     procedure EnviaComandoSrv(const Comando, Parametros: string);
     procedure ProcesaRespuestasJSON(const ATexto: string);
@@ -1808,11 +1807,6 @@ begin
     on e: Exception do
       DMCONS.AgregaLog('ERROR PRESET 3: ' + e.Message);
   end;
-end;
-
-procedure TFDISBRIDGE.EnviaPreset(var rsp: string; xcomb: integer);
-begin
-  EnviaPreset3(rsp, xcomb);
 end;
 
 {==============================================================================
