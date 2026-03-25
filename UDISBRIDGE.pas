@@ -113,6 +113,7 @@ type
     Memo2: TMemo;
     { Nuevo: ServerSocket para servicio de dispensarios }
     SSocketPDisp: TServerSocket;
+    Button2: TButton;
     procedure FormShow(Sender: TObject);
     procedure Timer1Timer(Sender: TObject);
     procedure ListBox1Click(Sender: TObject);
@@ -130,6 +131,7 @@ type
     procedure SSocketPDispClientRead(Sender: TObject; Socket: TCustomWinSocket);
     procedure SSocketPDispClientError(Sender: TObject; Socket: TCustomWinSocket;
       ErrorEvent: TErrorEvent; var ErrorCode: Integer);
+    procedure Button2Click(Sender: TObject);
   private
     ContReset       : integer;
     SwReset,
@@ -624,18 +626,18 @@ begin
 
       { Configurar ServerSocket para servicio de dispensarios }
       SSocketPDisp.Port := PuertoSrv;
-      SSocketPDisp.ServerType := stNonBlocking;
-      SSocketPDisp.OnClientConnect := SSocketPDispClientConnect;
-      SSocketPDisp.OnClientDisconnect := SSocketPDispClientDisconnect;
-      SSocketPDisp.OnClientRead := SSocketPDispClientRead;
-      SSocketPDisp.OnClientError := SSocketPDispClientError;
-      try
-        SSocketPDisp.Active := True;
-        DMCONS.AgregaLog('ServerSocket Srv activo en puerto ' + IntToStr(PuertoSrv));
-      except
-        on E: Exception do
-          DMCONS.AgregaLog('ERROR al activar ServerSocket Srv: ' + E.Message);
-      end;
+        SSocketPDisp.ServerType := stNonBlocking;
+        SSocketPDisp.OnClientConnect := SSocketPDispClientConnect;
+        SSocketPDisp.OnClientDisconnect := SSocketPDispClientDisconnect;
+        SSocketPDisp.OnClientRead := SSocketPDispClientRead;
+        SSocketPDisp.OnClientError := SSocketPDispClientError;
+        try
+          SSocketPDisp.Active := True;
+          DMCONS.AgregaLog('ServerSocket Srv activo en puerto ' + IntToStr(PuertoSrv));
+        except
+          on E: Exception do
+            DMCONS.AgregaLog('ERROR al activar ServerSocket Srv: ' + E.Message);
+        end;
 
       if DMCONS.TimerDisp > 0 then
         Timer1.Interval := DMCONS.TimerDisp;
@@ -1377,6 +1379,14 @@ begin
         listaVars.Free;
       end;
 
+      { Si SwEmular esta activo, agregar variable ModoEmulacion=Si
+        para que el servicio de dispensarios trabaje sin puerto serial }
+      if DMCONS.SwEmular then begin
+        if variables <> '' then
+          variables := variables + #13#10;
+        variables := variables + 'ModoEmulacion=Si';
+      end;
+
       EnviaComandoSrv('INITIALIZE', TlkJSON.GenerateText(jsConfig) + '|' + variables);
       DMCONS.AgregaLog('INITIALIZE encolado - Puerto: ' + sConnection);
     finally
@@ -1734,10 +1744,12 @@ begin
       rsp := 'Posicion Deshabilitada';
       exit;
     end;
+
     if not (TPosCarga[xpos].estatus in [1, 5, 7, 9]) then begin
       rsp := 'Posicion no Disponible';
       exit;
     end;
+
     if TPosCarga[xpos].estatus = 9 then
       EnviaComandoSrv('STOP', IntToStr(xpos));
 
@@ -1748,6 +1760,7 @@ begin
 
     { Determinar combustible para el preset }
     xprodauto := '';
+
     if xcomb > 0 then
       xprodauto := IntToStr(xcomb)
     else
@@ -1757,23 +1770,29 @@ begin
       { PRESET EN IMPORTE }
       if TPosCarga[xpos].swFlujoVehic then
         xprodauto := xprodauto; // mantener
+
       if SnImporte > 99999 then SnImporte := 99999;
 
       EnviaComandoSrv('AUTHORIZE',
-        IntToStr(xpos) + '|' +
-        FormatFloat('0.00', SnImporte) + '|' +
-        '1|' + xprodauto + '|' + efv);
+        IntToStr(xpos) + '|' +                   // 1: posCarga
+        xprodauto + '|' +                        // 2: comb
+        FormatFloat('0.00', SnImporte) + '|' +   // 3: cantidad (OCC - Importe)
+        '0|' +                                   // 4: cantidad (OCL - empty/0)
+        efv);                                    // 5: finv
 
       TPosCarga[xpos].swFlujoVehic := False;
       TPosCarga[xpos].ImportePreset := SnImporte;
       TPosCarga[xpos].MontoPreset := '$ ' + FormatoMoneda(SnImporte);
+
     end
     else begin
       { PRESET EN LITROS }
       EnviaComandoSrv('AUTHORIZE',
-        IntToStr(xpos) + '|' +
-        FormatFloat('0.000', SnLitros) + '|' +
-        '2|' + xprodauto + '|' + efv);
+        IntToStr(xpos) + '|' +                   // 1: posCarga
+        xprodauto + '|' +                        // 2: comb
+        '0|' +                                   // 3: cantidad (OCC - empty/0)
+        FormatFloat('0.000', SnLitros) + '|' +   // 4: cantidad (OCL - Litros)
+        efv);                                    // 5: finv
 
       TPosCarga[xpos].ImportePreset := SnLitros;
       TPosCarga[xpos].MontoPreset := FormatoMoneda(SnLitros) + ' lts';
@@ -1781,8 +1800,10 @@ begin
 
     TPosCarga[xpos].HoraOcc := now;
     TPosCarga[xpos].SwPreset := true;
+
     if not swlitros then
       DMCONS.AgregaLog('Importe Preset: ' + Floattostr(SnImporte));
+
   except
     on e: Exception do
       DMCONS.AgregaLog('ERROR PRESET 3: ' + e.Message);
@@ -2243,6 +2264,12 @@ end;
 procedure TFDISBRIDGE.Button3Click(Sender: TObject);
 begin
   DMCONS.ListaLogCmnd.SaveToFile('\ImagenCo\LogCmnd' + FiltraStrNum(FechaHoraToStr(Now)) + '.Txt');
+end;
+
+
+procedure TFDISBRIDGE.Button2Click(Sender: TObject);
+begin
+  EnviaComandoSrv('TRACE', '');
 end;
 
 end.

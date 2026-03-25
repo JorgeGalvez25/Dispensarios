@@ -3,8 +3,8 @@ object FDISBRIDGE: TFDISBRIDGE
   Top = 131
   BorderStyle = bsSingle
   Caption = 
-    'I-Gas Consola de Dispensarios V2 (Bridge)   -   I-Gas Vo' +
-    'lum'#233'trico'
+    'I-Gas Consola de Dispensarios V2 (Bridge)   -   I-Gas Volum'#233'tric' +
+    'o'
   ClientHeight = 517
   ClientWidth = 711
   Color = clBtnFace
@@ -78,7 +78,7 @@ object FDISBRIDGE: TFDISBRIDGE
     object StaticText8: TStaticText
       Left = 9
       Top = 7
-      Width = 90
+      Width = 56
       Height = 24
       BorderStyle = sbsSunken
       Caption = 'Bridge'
@@ -4216,6 +4216,15 @@ object FDISBRIDGE: TFDISBRIDGE
         Width = 297
         Height = 102
         TabOrder = 9
+      end
+      object Button2: TButton
+        Left = 46
+        Top = 155
+        Width = 165
+        Height = 33
+        Caption = 'Guardar Log'#13#10'PDispensarios'
+        TabOrder = 10
+        OnClick = Button2Click
       end
     end
   end
