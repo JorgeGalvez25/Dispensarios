@@ -170,6 +170,7 @@ type
     procedure ActualizaDesdeJSON;
     procedure ProcesaRespuestaPeticion(const AComando, AResultado: string);
     procedure InicializaSrv;
+    procedure IntentaLevantarServicioCliente;
     procedure EnviarPreciosIniciales;
     procedure ProcesaComandosBD;
     procedure ActualizaEstadoDispensarios;
@@ -254,7 +255,7 @@ var
 
 implementation
 
-uses ULIBGRAL, ULIBLICENCIAS, DDMCONS, UDISMENU, StrUtils, Math;
+uses ULIBGRAL, ULIBLICENCIAS, DDMCONS, UDISMENU, StrUtils, Math, WinSvc;
 
 {$R *.DFM}
 
@@ -608,6 +609,105 @@ begin
 end;
 
 {==============================================================================
+  IntentaLevantarServicioCliente
+  Intenta iniciar el servicio cliente que se conecta a este ServerSocket.
+==============================================================================}
+
+procedure TFDISBRIDGE.IntentaLevantarServicioCliente;
+const
+  ESPERA_INICIO_MS = 15000;
+  PAUSA_CONSULTA_MS = 500;
+var
+  hSCM, hSrv: SC_HANDLE;
+  st: TServiceStatus;
+  t0, err: DWORD;
+  Args: PChar;
+begin
+  hSCM := 0;
+  hSrv := 0;
+  Args := nil;
+  with DMCONS  do
+  begin
+    try
+      hSCM := OpenSCManager(nil, nil, SC_MANAGER_CONNECT);
+      if hSCM = 0 then begin
+        err := GetLastError;
+        AgregaLog('ERROR al abrir Service Control Manager: ' +
+          IntToStr(err) + ' - ' + SysErrorMessage(err));
+        Exit;
+      end;
+
+      hSrv := OpenService(hSCM, PChar(NombreServicioDisp),
+        SERVICE_QUERY_STATUS or SERVICE_START);
+      if hSrv = 0 then begin
+        err := GetLastError;
+        AgregaLog('ERROR al abrir servicio cliente [' +
+          NombreServicioDisp + ']: ' + IntToStr(err) +
+          ' - ' + SysErrorMessage(err));
+        Exit;
+      end;
+
+      if not QueryServiceStatus(hSrv, st) then begin
+        err := GetLastError;
+        AgregaLog('ERROR al consultar estado del servicio cliente [' +
+          NombreServicioDisp + ']: ' + IntToStr(err) +
+          ' - ' + SysErrorMessage(err));
+        Exit;
+      end;
+
+      if st.dwCurrentState = SERVICE_RUNNING then begin
+        AgregaLog('Servicio cliente ya se encuentra en ejecucion: ' +
+          NombreServicioDisp);
+        Exit;
+      end;
+
+      if st.dwCurrentState <> SERVICE_START_PENDING then begin
+        AgregaLog('Intentando iniciar servicio cliente: ' +
+          NombreServicioDisp);
+
+        if not StartService(hSrv, 0, Args) then begin
+          err := GetLastError;
+          if err <> ERROR_SERVICE_ALREADY_RUNNING then begin
+            AgregaLog('ERROR al iniciar servicio cliente [' +
+              NombreServicioDisp + ']: ' + IntToStr(err) +
+              ' - ' + SysErrorMessage(err));
+            Exit;
+          end;
+        end;
+      end else
+        AgregaLog('Servicio cliente en proceso de inicio: ' +
+          NombreServicioDisp);
+
+      t0 := GetTickCount;
+      repeat
+        Sleep(PAUSA_CONSULTA_MS);
+        if not QueryServiceStatus(hSrv, st) then begin
+          err := GetLastError;
+          AgregaLog('ERROR al consultar avance de inicio del servicio cliente [' +
+            NombreServicioDisp + ']: ' + IntToStr(err) +
+            ' - ' + SysErrorMessage(err));
+          Exit;
+        end;
+
+        if st.dwCurrentState = SERVICE_RUNNING then begin
+          AgregaLog('Servicio cliente iniciado correctamente: ' +
+            NombreServicioDisp);
+          Exit;
+        end;
+      until (GetTickCount - t0) >= ESPERA_INICIO_MS;
+
+      AgregaLog('ADVERTENCIA: el servicio cliente no llego a RUNNING dentro del tiempo esperado [' +
+        NombreServicioDisp + ']. Estado=' + IntToStr(st.dwCurrentState));
+    finally
+      if hSrv <> 0 then
+        CloseServiceHandle(hSrv);
+      if hSCM <> 0 then
+        CloseServiceHandle(hSCM);
+    end;
+  end;    
+end;
+
+{==============================================================================
   FormShow - Arranque del sistema
 ==============================================================================}
 
@@ -633,6 +733,7 @@ begin
         try
           SSocketPDisp.Active := True;
           DMCONS.AgregaLog('ServerSocket Srv activo en puerto ' + IntToStr(PuertoSrv));
+          IntentaLevantarServicioCliente;
         except
           on E: Exception do
             DMCONS.AgregaLog('ERROR al activar ServerSocket Srv: ' + E.Message);
@@ -1327,6 +1428,7 @@ begin
         if TPosCarga[i].NoComb = 0 then Continue;
         jsDisp := TlkJSONobject.Create;
         jsDisp.Add('DispenserId', i);
+        jsDisp.Add('OperationMode', IfThen(TPosCarga[i].ModoOpera = 'Prepago','SELFSERVICE','FULLSERVICE'));
         jsMangueras := TlkJSONlist.Create;
         for j := 1 to TPosCarga[i].NoComb do begin
           jsManguera := TlkJSONobject.Create;

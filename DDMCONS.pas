@@ -719,6 +719,7 @@ type
     ServidorGateway         :string;
     FlujoPorVehiculo:Boolean;
     TimerDisp,ConteoOcc:Integer;
+    NombreServicioDisp:string;
     // FIN VARIABLES
     emEstacionServicio            :integer;
     SegundosFINV            :Integer;
@@ -1591,6 +1592,8 @@ begin
         TimerDisp:=StrToIntDef(ExtraeElemStrSep(lin,2,'='),0);
       if Mayusculas(ss)='CONTEOOCC' then
         ConteoOcc:=StrToIntDef(ExtraeElemStrSep(lin,2,'='),16);
+      if Mayusculas(ss)='NOMBRESERVICIODISP' then
+        NombreServicioDisp:=ExtraeElemStrSep(lin,2,'=');
     end;
   finally
     lista.Free;
