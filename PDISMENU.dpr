@@ -14,7 +14,6 @@ uses
   DmSrv_Invk in 'DmSrv_Invk.pas',
   SrvDispensarios_Impl in 'SrvDispensarios_Impl.pas' {SrvDispensarios: TRORemoteDataModule},
   Hashes in 'Hashes.pas',
-  UDISGATEWAY in 'UDISGATEWAY.pas' {FDISGATEWAY},
   UDISBRIDGE in 'UDISBRIDGE.pas' {FDISBRIDGE};
 
 {#ROGEN:PDISMENU.rodl} // RemObjects: Careful, do not remove!
