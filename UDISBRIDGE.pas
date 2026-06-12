@@ -23,6 +23,7 @@ uses Variants,
 
 const
   MCxP = 4;
+  MAX_CONSULTAS_RESPCMND = 60;
 
 type
   { ---- TPeticion: comando encolado para servicio de dispensarios ---- }
@@ -31,6 +32,12 @@ type
     Comando  : string;   // AUTHORIZE, PRICES, STOP, etc.
     Peticion : string;   // String completo: DISPENSERS|COMANDO|parametros
     Tries    : Integer;
+    RespCmnd : Boolean; // True cuando esta peticion es una consulta RESPCMND
+    FolioCmnd: Integer; // Folio interno devuelto por el servicio de dispensarios
+    ComandoOrigen: string; // Comando original que genero el folio interno
+    CmndBDIndex  : Integer; // Indice en DMCONS.TabCmnd cuando viene de BD
+    CmndBDTexto  : string;  // Texto original del comando de BD para log
+    ConsultasRespCmnd: Integer;
   end;
 
   { ---- TPeticionQueue: cola thread-safe ---- }
@@ -42,9 +49,10 @@ type
     constructor Create;
     destructor  Destroy; override;
     procedure Push(APeticion: TPeticion);
-    function  TryPeek(out APeticion: TPeticion; MaxTries: Integer = 5): Boolean;
+    function  TryPeek(out APeticion: TPeticion; MaxTries: Integer = 100): Boolean;
     function  TryLocateByFolio(AFol: Integer; out APet: TPeticion): Boolean;
     function  TryLocateByTipo(ATipo: string; out APet: TPeticion): Boolean;
+    function  TieneCmndBDIndex(AIndex: Integer): Boolean;
     procedure Remove(APeticion: TPeticion; AFree: Boolean = True);
     procedure Clear;
     function  Count: Integer;
@@ -154,6 +162,13 @@ type
     SrvEnEjecucion  : Boolean;
     HoraInicializado: TDateTime;
     PuertoSrv       : Integer;
+    function  NuevoFolioSrv: Integer;
+    function  ComandoUsaRespCmnd(const AComando: string): Boolean;
+    function  ExtraeFolioCmnd(const AComando, AResultado: string; var AFolioCmnd: Integer): Boolean;
+    function  RespCmndSiguePendiente(const AResultado: string): Boolean;
+    function  ResultadoCmndBDDesdeSrv(const AResultado: string): string;
+    procedure EncolaConsultaRespCmnd(APeticion: TPeticion; AFolioCmnd: Integer);
+    procedure FinalizaComandoBD(APeticion: TPeticion; const AResultado: string);
   public
     procedure DespliegaPosCarga(xpos: integer; swforza: boolean);
     procedure IniciaBaseDeDatos;
@@ -163,9 +178,11 @@ type
     procedure lee_registro;
     function CombustibleEnPosicion(xpos, xposcarga: integer): integer;
     function PosicionDeCombustible(xpos, xcomb: integer): integer;
-    procedure EnviaPreset3(var rsp: string; xcomb: integer);
+    procedure EnviaPreset3(var rsp: string; xcomb: integer;
+      ACmndBDIndex: Integer = 0; const ACmndBDTexto: string = '');
     { Nuevo: comunicacion con servicio de dispensarios }
-    procedure EnviaComandoSrv(const Comando, Parametros: string);
+    function EnviaComandoSrv(const Comando, Parametros: string;
+      ACmndBDIndex: Integer = 0; const ACmndBDTexto: string = ''): TPeticion;
     procedure ProcesaRespuestasJSON(const ATexto: string);
     procedure ActualizaDesdeJSON;
     procedure ProcesaRespuestaPeticion(const AComando, AResultado: string);
@@ -349,6 +366,25 @@ begin
         Exit;
       end;
     Result := False;
+  finally
+    LeaveCriticalSection(FCS);
+  end;
+end;
+
+
+function TPeticionQueue.TieneCmndBDIndex(AIndex: Integer): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  if AIndex <= 0 then Exit;
+  EnterCriticalSection(FCS);
+  try
+    for i := 0 to FList.Count - 1 do
+      if TPeticion(FList[i]).CmndBDIndex = AIndex then begin
+        Result := True;
+        Exit;
+      end;
   finally
     LeaveCriticalSection(FCS);
   end;
@@ -883,7 +919,7 @@ end;
 procedure TFDISBRIDGE.ProcesaRespuestasJSON(const ATexto: string);
 var
   jArray, jItem: TlkJSONbase;
-  idx, folioResp: Integer;
+  idx, folioResp, folioCmnd: Integer;
   Resultado: string;
   p: TPeticion;
 begin
@@ -929,18 +965,44 @@ begin
         Resultado := VarToStr(TlkJSONobject(jItem).Field['Resultado'].Value);
 
         if ListaPeticiones.TryLocateByFolio(folioResp, p) then begin
-          ProcesaRespuestaPeticion(p.Comando, Resultado);
-          ListaPeticiones.Remove(p);
+          if p.RespCmnd then begin
+            if RespCmndSiguePendiente(Resultado) then begin
+              if p.ConsultasRespCmnd >= MAX_CONSULTAS_RESPCMND then begin
+                DMCONS.AgregaLog('RESPCMND sin respuesta final para ' +
+                  p.ComandoOrigen + ' folio interno ' + IntToStr(p.FolioCmnd));
+                ProcesaRespuestaPeticion(p.ComandoOrigen,
+                  'False|Tiempo agotado esperando respuesta final del comando|');
+                FinalizaComandoBD(p,
+                  'False|Tiempo agotado esperando respuesta final del comando|');
+                ListaPeticiones.Remove(p);
+              end
+              else
+                EncolaConsultaRespCmnd(p, p.FolioCmnd);
+            end
+            else begin
+              ProcesaRespuestaPeticion(p.ComandoOrigen, Resultado);
+              FinalizaComandoBD(p, Resultado);
+              ListaPeticiones.Remove(p);
+            end;
+          end
+          else begin
+            if ExtraeFolioCmnd(p.Comando, Resultado, folioCmnd) then
+              EncolaConsultaRespCmnd(p, folioCmnd)
+            else if ComandoUsaRespCmnd(p.Comando) and AnsiStartsText('True', Resultado) then begin
+              ProcesaRespuestaPeticion(p.Comando,
+                'False|El servicio acepto el comando pero no regreso folio interno|');
+              FinalizaComandoBD(p,
+                'False|El servicio acepto el comando pero no regreso folio interno|');
+              ListaPeticiones.Remove(p);
+            end
+            else begin
+              ProcesaRespuestaPeticion(p.Comando, Resultado);
+              FinalizaComandoBD(p, Resultado);
+              ListaPeticiones.Remove(p);
+            end;
+          end;
         end;
       end;
-
-      { Limpiar peticiones respondidas implicitamente }
-      if ListaPeticiones.TryLocateByTipo('PRICES', p) then
-        ListaPeticiones.Remove(p);
-      if ListaPeticiones.TryLocateByTipo('AUTHORIZE', p) then
-        ListaPeticiones.Remove(p);
-      if ListaPeticiones.TryLocateByTipo('PAYMENT', p) then
-        ListaPeticiones.Remove(p);
     end;
   except
     on e: Exception do
@@ -1288,25 +1350,149 @@ end;
   EnviaComandoSrv - Encola un comando para servicio de dispensarios
 ==============================================================================}
 
-procedure TFDISBRIDGE.EnviaComandoSrv(const Comando, Parametros: string);
-var
-  p: TPeticion;
+function TFDISBRIDGE.NuevoFolioSrv: Integer;
 begin
   Inc(FolioSecuencia);
   if FolioSecuencia > 999 then
     FolioSecuencia := 1;
+  Result := FolioSecuencia;
+end;
 
+function TFDISBRIDGE.EnviaComandoSrv(const Comando, Parametros: string;
+  ACmndBDIndex: Integer; const ACmndBDTexto: string): TPeticion;
+var
+  p: TPeticion;
+begin
   p := TPeticion.Create;
-  p.Folio := FolioSecuencia;
-  p.Comando := Comando;
+  p.Folio := NuevoFolioSrv;
+  p.Comando := UpperCase(Trim(Comando));
+  p.ComandoOrigen := p.Comando;
   if Parametros <> '' then
-    p.Peticion := 'DISPENSERS|' + Comando + '|' + Parametros
+    p.Peticion := 'DISPENSERS|' + p.Comando + '|' + Parametros
   else
-    p.Peticion := 'DISPENSERS|' + Comando;
+    p.Peticion := 'DISPENSERS|' + p.Comando;
   p.Tries := 0;
+  p.RespCmnd := False;
+  p.FolioCmnd := 0;
+  p.CmndBDIndex := ACmndBDIndex;
+  p.CmndBDTexto := ACmndBDTexto;
+  p.ConsultasRespCmnd := 0;
   ListaPeticiones.Push(p);
 
   DMCONS.AgregaLog('CMD Srv [' + IntToStr(p.Folio) + ']: ' + p.Peticion);
+  Result := p;
+end;
+
+function TFDISBRIDGE.ComandoUsaRespCmnd(const AComando: string): Boolean;
+var
+  c: string;
+begin
+  c := UpperCase(Trim(AComando));
+  Result := (c = 'AUTHORIZE') or (c = 'STOP') or (c = 'START') or
+            (c = 'PAYMENT') or (c = 'TOTALS');
+end;
+
+function TFDISBRIDGE.ExtraeFolioCmnd(const AComando, AResultado: string;
+  var AFolioCmnd: Integer): Boolean;
+var
+  i, n, fol: Integer;
+  campo: string;
+begin
+  Result := False;
+  AFolioCmnd := 0;
+
+  if not ComandoUsaRespCmnd(AComando) then Exit;
+  if not AnsiStartsText('True|', AResultado) then Exit;
+
+  n := NoElemStrSep(AResultado, '|');
+  for i := 2 to n do begin
+    campo := Trim(ExtraeElemStrSep(AResultado, i, '|'));
+    if campo = '' then Continue;
+    fol := StrToIntDef(campo, 0);
+    if fol > 0 then begin
+      AFolioCmnd := fol;
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function TFDISBRIDGE.RespCmndSiguePendiente(const AResultado: string): Boolean;
+begin
+  Result := (not AnsiStartsText('True', AResultado)) and
+            (Trim(ExtraeElemStrSep(AResultado, 2, '|')) = '*');
+end;
+
+function TFDISBRIDGE.ResultadoCmndBDDesdeSrv(const AResultado: string): string;
+var
+  i, n: Integer;
+  campo, payload: string;
+begin
+  payload := '';
+  n := NoElemStrSep(AResultado, '|');
+
+  if AnsiStartsText('True', AResultado) then begin
+    for i := 2 to n do begin
+      campo := ExtraeElemStrSep(AResultado, i, '|');
+      if (i = n) and (campo = '') then Continue;
+      if payload <> '' then payload := payload + '|';
+      payload := payload + campo;
+    end;
+    Result := 'OK' + payload;
+  end
+  else begin
+    Result := ExtraeElemStrSep(AResultado, 2, '|');
+    if Result = '' then
+      Result := AResultado;
+    if Result = '*' then
+      Result := 'Comando sin respuesta final';
+  end;
+end;
+
+procedure TFDISBRIDGE.EncolaConsultaRespCmnd(APeticion: TPeticion;
+  AFolioCmnd: Integer);
+begin
+  if APeticion = nil then Exit;
+
+  if APeticion.ComandoOrigen = '' then
+    APeticion.ComandoOrigen := APeticion.Comando;
+
+  APeticion.RespCmnd := True;
+  APeticion.Comando := 'RESPCMND';
+  APeticion.FolioCmnd := AFolioCmnd;
+  APeticion.Folio := NuevoFolioSrv;
+  APeticion.Peticion := 'DISPENSERS|RESPCMND|' + IntToStr(AFolioCmnd);
+  APeticion.Tries := 0;
+  Inc(APeticion.ConsultasRespCmnd);
+
+  DMCONS.AgregaLog('RESPCMND encolado [' + IntToStr(APeticion.Folio) +
+    '] para ' + APeticion.ComandoOrigen +
+    ' folio interno ' + IntToStr(AFolioCmnd) +
+    ' intento ' + IntToStr(APeticion.ConsultasRespCmnd));
+end;
+
+procedure TFDISBRIDGE.FinalizaComandoBD(APeticion: TPeticion;
+  const AResultado: string);
+var
+  rsp, cmndTxt: string;
+  idx: Integer;
+begin
+  if APeticion = nil then Exit;
+  idx := APeticion.CmndBDIndex;
+  if not (idx in [1..40]) then Exit;
+
+  rsp := ResultadoCmndBDDesdeSrv(AResultado);
+  cmndTxt := APeticion.CmndBDTexto;
+
+  with DMCONS do begin
+    if cmndTxt = '' then
+      cmndTxt := TabCmnd[idx].Comando;
+    TabCmnd[idx].SwNuevo := False;
+    TabCmnd[idx].SwResp := True;
+    TabCmnd[idx].Respuesta := rsp;
+    DMCONS.AgregaLogCmnd(LlenaStr(cmndTxt, 'I', 40, ' ') +
+      ' Respuesta: ' + TabCmnd[idx].Respuesta);
+  end;
 end;
 
 {==============================================================================
@@ -1534,6 +1720,12 @@ begin
       for xcmnd := 1 to 40 do if (TabCmnd[xcmnd].SwActivo) and (not TabCmnd[xcmnd].SwResp) then begin
         SwAplicaCmnd := true;
         ss := Mayusculas(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 1, ' '));
+
+        { Si el comando ya fue enviado al servicio y estamos esperando
+          RESPCMND, no debe volver a procesarse ni duplicarse. }
+        if Assigned(ListaPeticiones) and ListaPeticiones.TieneCmndBDIndex(xcmnd) then
+          Continue;
+
         DMCONS.AgregaLog(TabCmnd[xcmnd].Comando);
 
         { PAROTOTAL }
@@ -1612,7 +1804,9 @@ begin
                   xp := PosicionDeCombustible(SnPosCarga, xcomb);
                   if xp > 0 then begin
                     TPosCarga[SnPosCarga].finventa := StrToIntDef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 6, ' '), 0);
-                    EnviaPreset3(rsp, xcomb);
+                    EnviaPreset3(rsp, xcomb, xcmnd, TabCmnd[xcmnd].Comando);
+                    if (rsp = 'OK') and ListaPeticiones.TieneCmndBDIndex(xcmnd) then
+                      SwAplicaCmnd := False;
                   end
                   else rsp := 'Combustible no existe en esta posicion';
                 end;
@@ -1662,7 +1856,9 @@ begin
                       end;
                     end;
                     TPosCarga[SnPosCarga].finventa := StrToIntDef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 6, ' '), 0);
-                    EnviaPreset3(rsp, xcomb);
+                    EnviaPreset3(rsp, xcomb, xcmnd, TabCmnd[xcmnd].Comando);
+                    if (rsp = 'OK') and ListaPeticiones.TieneCmndBDIndex(xcmnd) then
+                      SwAplicaCmnd := False;
                   end
                   else rsp := 'Combustible no existe en esta posicion';
                 end;
@@ -1681,7 +1877,9 @@ begin
               TPosCarga[xpos].tipopago := StrToIntDef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 3, ' '), 0);
               if (TPosCarga[xpos].Estatus in [1, 3]) then begin
                 TPosCarga[xpos].finventa := 0;
-                EnviaComandoSrv('PAYMENT', IntToStr(xpos) + '|' + IntToStr(TPosCarga[xpos].tipopago));
+                EnviaComandoSrv('PAYMENT', IntToStr(xpos) + '|' + IntToStr(TPosCarga[xpos].tipopago),
+                  xcmnd, TabCmnd[xcmnd].Comando);
+                SwAplicaCmnd := False;
                 { Actualizar tipo de pago de ultima venta }
                 try
                   try
@@ -1749,7 +1947,8 @@ begin
           xpos := strtointdef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 2, ' '), 0);
           if xpos in [1..MaxPosCarga] then begin
             if (TPosCarga[xpos].estatus in [2, 9]) then begin
-              EnviaComandoSrv('STOP', IntToStr(xpos));
+              EnviaComandoSrv('STOP', IntToStr(xpos), xcmnd, TabCmnd[xcmnd].Comando);
+              SwAplicaCmnd := False;
               if TPosCarga[xpos].estatus = 9 then
                 TPosCarga[xpos].tipopago := 0;
             end;
@@ -1760,8 +1959,10 @@ begin
           rsp := 'OK';
           xpos := strtointdef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 2, ' '), 0);
           if xpos in [1..MaxPosCarga] then
-            if (TPosCarga[xpos].estatus in [2, 8]) then
-              EnviaComandoSrv('START', IntToStr(xpos));
+            if (TPosCarga[xpos].estatus in [2, 8]) then begin
+              EnviaComandoSrv('START', IntToStr(xpos), xcmnd, TabCmnd[xcmnd].Comando);
+              SwAplicaCmnd := False;
+            end;
         end
         { CORTE }
         else if ss = 'CORTE' then begin
@@ -1831,7 +2032,8 @@ end;
   Ahora usa EnviaComandoSrv('AUTHORIZE',...) en lugar de ComandoConsolaBuff
 ==============================================================================}
 
-procedure TFDISBRIDGE.EnviaPreset3(var rsp: string; xcomb: integer);
+procedure TFDISBRIDGE.EnviaPreset3(var rsp: string; xcomb: integer;
+  ACmndBDIndex: Integer; const ACmndBDTexto: string);
 var xpos, xc, xp: integer;
     ss, xprodauto, efv: string;
     swlitros: boolean;
@@ -1879,7 +2081,8 @@ begin
         xprodauto + '|' +                        // 2: comb
         FormatFloat('0.00', SnImporte) + '|' +   // 3: cantidad (OCC - Importe)
         '0|' +                                   // 4: cantidad (OCL - empty/0)
-        efv);                                    // 5: finv
+        efv,                                     // 5: finv
+        ACmndBDIndex, ACmndBDTexto);
 
       TPosCarga[xpos].swFlujoVehic := False;
       TPosCarga[xpos].ImportePreset := SnImporte;
@@ -1893,7 +2096,8 @@ begin
         xprodauto + '|' +                        // 2: comb
         '0|' +                                   // 3: cantidad (OCC - empty/0)
         FormatFloat('0.000', SnLitros) + '|' +   // 4: cantidad (OCL - Litros)
-        efv);                                    // 5: finv
+        efv,                                     // 5: finv
+        ACmndBDIndex, ACmndBDTexto);
 
       TPosCarga[xpos].ImportePreset := SnLitros;
       TPosCarga[xpos].MontoPreset := FormatoMoneda(SnLitros) + ' lts';
