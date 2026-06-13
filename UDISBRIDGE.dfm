@@ -4230,7 +4230,7 @@ object FDISBRIDGE: TFDISBRIDGE
   end
   object Timer1: TTimer
     Enabled = False
-    Interval = 150
+    Interval = 500
     OnTimer = Timer1Timer
     Left = 23
     Top = 83

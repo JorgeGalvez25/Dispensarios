@@ -1024,7 +1024,8 @@ var
   hosesArr: TlkJSONlist;
   hoseObj: TlkJSONobject;
   i, j, xpos, xestatus, xcomb, xmang, xc, xp, ii: Integer;
-  ximporte, xvolumen, xprecio, xdiflts: Real;
+  ximporte, xvolumen, xprecio, xdiflts, xTotalNuevo: Real;
+  swRegistraTotales, swCambioTotales: Boolean;
   ss, xestado, xmodo: string;
 begin
   try
@@ -1198,7 +1199,6 @@ begin
         end;
 
         Mensaje := '';
-        swinicio2 := false;
 
         if estatus = 2 then begin
           { Despachando - actualizar importe en curso }
@@ -1236,9 +1236,8 @@ begin
               swAvanzoVenta := False;
               swSinGuardar := False;
               swdesp := true;
-              if UpperCase(DMCONS.TotalCalculado) = 'SI' then begin
-                if PosActual in [1..MCxP] then
-                  TotalLitros[PosActual] := TotalLitros[PosActual] + volumen;
+              if PosActual in [1..MCxP] then begin
+                TotalLitros[PosActual] := TotalLitros[PosActual] + volumen;
                 DMCONS.RegistraTotales_BD4(xpos, TotalLitros[1], TotalLitros[2], TotalLitros[3], TotalLitros[4]);
               end;
             end;
@@ -1261,23 +1260,36 @@ begin
         if posObj.Field['Hoses'] <> nil then begin
           hosesArr := posObj.Field['Hoses'] as TlkJSONlist;
           if hosesArr <> nil then begin
+            swRegistraTotales := False;
+            swCambioTotales := False;
+
             for j := 0 to hosesArr.Count - 1 do begin
               hoseObj := TlkJSONobject(hosesArr.Child[j]);
               if (hoseObj <> nil) and (j < MCxP) then begin
                 if hoseObj.Field['Total'] <> nil then begin
                   { Detectar ventas no guardadas por cambio en totalizadores }
-                  xprecio := Double(hoseObj.Field['Total'].Value);
-                  if (swSinGuardar) and (Abs(xprecio - TotalLitros[j + 1]) > 0.5) then begin
-                    DMCONS.AgregaLog('Venta posterior guardada Poscarga: ' + IntToStr(xpos));
-                    SwDesp := True;
-                    swSinGuardar := False;
+                  xTotalNuevo := Double(hoseObj.Field['Total'].Value);
+                  if SwInicio2 then
+                    swRegistraTotales := True;
+                  if Abs(xTotalNuevo - TotalLitros[j + 1]) > 0.0001 then begin
+                    swCambioTotales := True;
+                    if (swSinGuardar) and (Abs(xTotalNuevo - TotalLitros[j + 1]) > 0.5) then begin
+                      DMCONS.AgregaLog('Venta posterior guardada Poscarga: ' + IntToStr(xpos));
+                      SwDesp := True;
+                      swSinGuardar := False;
+                    end;
+                    TotalLitros[j + 1] := xTotalNuevo;
                   end;
-                  TotalLitros[j + 1] := xprecio;
                   SwTotales[j + 1] := false;
                 end;
               end;
             end;
-            DMCONS.RegistraTotales_BD4(xpos, TotalLitros[1], TotalLitros[2], TotalLitros[3], TotalLitros[4]);
+
+            if swRegistraTotales or swCambioTotales then
+              DMCONS.RegistraTotales_BD4(xpos, TotalLitros[1], TotalLitros[2], TotalLitros[3], TotalLitros[4]);
+
+            if swRegistraTotales then
+              SwInicio2 := False;
             swSinGuardar := False;
           end;
         end;
