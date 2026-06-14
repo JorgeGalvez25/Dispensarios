@@ -175,7 +175,6 @@ type
     procedure IniciaEstacion;
     procedure DespliegaPrecios;
     procedure registro(valor: integer; variable: string);
-    procedure lee_registro;
     function CombustibleEnPosicion(xpos, xposcarga: integer): integer;
     function PosicionDeCombustible(xpos, xcomb: integer): integer;
     procedure EnviaPreset3(var rsp: string; xcomb: integer;
@@ -2210,14 +2209,11 @@ begin
     end;
     if SwCerrar then Close;
 
-    { 5. Lectura de registro }
-    try lee_registro; except end;
-
-    { 6. Refrescar conexion BD }
+    { 5. Refrescar conexion BD }
     if (Now - DMCONS.FechaHoraRefLog) > tmMinuto then
       DMCONS.RefrescaConexion;
 
-    { 7. Chequeo de cambio de precios }
+    { 6. Chequeo de cambio de precios }
     if (not swreset) and ((Now - DMCONS.FechaHoraPrecio) > 12 * tmSegundo) then begin
       DMCONS.FechaHoraPrecio := Now;
       with DMCONS do if AplicarPrecios then begin
@@ -2500,34 +2496,6 @@ begin
   finally
     Reg.CloseKey;
     Reg.Free;
-  end;
-end;
-
-procedure TFDISBRIDGE.lee_registro;
-var
-  Reg: TRegistry;
-  estado: integer;
-begin
-  with DMCONS do begin
-    Reg := TRegistry.Create(KEY_READ);
-    try
-      Reg.RootKey := HKEY_LOCAL_MACHINE;
-      estado := 0;
-      try
-        if Reg.OpenKey('\SOFTWARE\IMAGEN\VOL\DISP', True) then
-          Estado := Reg.ReadInteger('Estado');
-      except end;
-      if Estado = 1 then begin
-        Self.Visible := true;
-        Self.WindowState := wsMaximized;
-        Self.BringToFront;
-        registro(0, 'Estado');
-      end;
-    finally
-      Reg.CloseKey;
-      Reg.Free;
-      registro(0, 'Estado');
-    end;
   end;
 end;
 
