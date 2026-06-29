@@ -640,7 +640,7 @@ begin
   { Leer puerto del servicio de dispensarios (default 1004) }
   PuertoSrv := 1004; // Se puede cargar de INI/BD
 
-  StaticText7.Caption := ' Bridge V2 ';
+  StaticText7.Caption := ' Bridge';
 end;
 
 {==============================================================================
@@ -1513,6 +1513,7 @@ end;
 procedure TFDISBRIDGE.ProcesaRespuestaPeticion(const AComando, AResultado: string);
 var
   exito: Boolean;
+  i: Integer;
 begin
   exito := AnsiStartsText('True', AResultado);
   DMCONS.AgregaLog('Resp ' + AComando + ': ' + AResultado);
@@ -1540,40 +1541,43 @@ begin
   end
   else if SameText(AComando, 'PRICES') then begin
     if exito then begin
-      { Marcar precio como aplicado en BD }
+      { Marcar TODOS los precios pendientes como aplicados en BD }
       with DMCONS do begin
-        if (PrecioCombActual in [1..MaxComb]) then begin
-          with TabComb[PrecioCombActual] do begin
-            AplicaPrecio := false;
-            PreciosInicio := False;
-            try
-              Q_AplicaPrecioF.ParamByName('pFolio').AsInteger := Folio;
-              Q_AplicaPrecioF.ParamByName('pCombustible').AsInteger := PrecioCombActual;
-              Q_AplicaPrecioF.ParamByName('pError').AsString := 'No';
-              Q_AplicaPrecioF.ExecSQL;
-            except
-              on e: Exception do
-                DMCONS.AgregaLog('Error AplicaPrecioF: ' + e.Message);
-            end;
-            try
-              T_Tcmb.Active := true;
+        for i := 1 to MaxComb do begin
+          if TabComb[i].Activo and TabComb[i].AplicaPrecio then begin
+            with TabComb[i] do begin
+              AplicaPrecio := false;
+              PreciosInicio := False;
               try
-                if T_Tcmb.Locate('Clave', PrecioCombActual, []) then begin
-                  T_Tcmb.Edit;
-                  T_TcmbPrecioFisico.AsFloat := Precio;
-                  T_Tcmb.Post;
-                  Q_CombIb.Active := false;
-                  Q_CombIb.Active := true;
-                end;
-              finally
-                T_Tcmb.Active := false;
+                Q_AplicaPrecioF.ParamByName('pFolio').AsInteger := Folio;
+                Q_AplicaPrecioF.ParamByName('pCombustible').AsInteger := i;
+                Q_AplicaPrecioF.ParamByName('pError').AsString := 'No';
+                Q_AplicaPrecioF.ExecSQL;
+              except
+                on e: Exception do
+                  DMCONS.AgregaLog('Error AplicaPrecioF: ' + e.Message);
               end;
-            except
-              on e: Exception do
-                DMCONS.AgregaLog('Error PrecioFisico: ' + e.Message);
+              try
+                T_Tcmb.Active := true;
+                try
+                  if T_Tcmb.Locate('Clave', i, []) then begin
+                    T_Tcmb.Edit;
+                    T_TcmbPrecioFisico.AsFloat := Precio;
+                    T_Tcmb.Post;
+                  end;
+                finally
+                  T_Tcmb.Active := false;
+                end;
+              except
+                on e: Exception do
+                  DMCONS.AgregaLog('Error PrecioFisico: ' + e.Message);
+              end;
             end;
           end;
         end;
+        
+        Q_CombIb.Active := false;
+        Q_CombIb.Active := true;
       end;
     end;
   end;
@@ -1701,12 +1705,22 @@ end;
 ==============================================================================}
 
 procedure TFDISBRIDGE.EnviarPreciosIniciales;
-var i: Integer;
+var 
+  i: Integer;
+  sPrecios: string;
 begin
+  sPrecios := '';
   with DMCONS do begin
-    for i := 1 to MaxComb do with TabComb[i] do
-      if Activo and (Precio > 0) then
-        EnviaComandoSrv('PRICES', IntToStr(i) + '|' + FormatFloat('0.00', Precio));
+    for i := 1 to MaxComb do begin
+      if TabComb[i].Activo and (TabComb[i].Precio > 0) then
+        sPrecios := sPrecios + FormatFloat('0.00', TabComb[i].Precio)
+      else
+        sPrecios := sPrecios + '0';
+
+      if i < MaxComb then
+        sPrecios := sPrecios + '|';
+    end;
+    EnviaComandoSrv('PRICES', sPrecios);
   end;
 end;
 
@@ -2135,6 +2149,7 @@ end;
 
 procedure TFDISBRIDGE.Timer1Timer(Sender: TObject);
 var i: integer;
+    sPrecios: string;
 const tmSegundo = 1 / 86400;
       tmMinuto = 60 / 86400;
 begin
@@ -2217,12 +2232,18 @@ begin
     if (not swreset) and ((Now - DMCONS.FechaHoraPrecio) > 12 * tmSegundo) then begin
       DMCONS.FechaHoraPrecio := Now;
       with DMCONS do if AplicarPrecios then begin
-        for i := 1 to MaxComb do with TabComb[i] do if Activo then begin
-          if AplicaPrecio then begin
-            PrecioCombActual := i;
-            EnviaComandoSrv('PRICES', IntToStr(i) + '|' + FormatFloat('0.00', Precio));
-          end;
+        sPrecios := '';
+        for i := 1 to MaxComb do begin
+          if TabComb[i].Activo and (TabComb[i].Precio > 0) then
+            sPrecios := sPrecios + FormatFloat('0.00', TabComb[i].Precio)
+          else
+            sPrecios := sPrecios + '0';
+
+          if i < MaxComb then
+            sPrecios := sPrecios + '|';
         end;
+        EnviaComandoSrv('PRICES', sPrecios);
+        
         CargaPreciosFH(Now, true);
         DespliegaPrecios;
         DBGrid3.Refresh;
