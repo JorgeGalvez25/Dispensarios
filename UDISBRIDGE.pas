@@ -187,6 +187,7 @@ type
     procedure ProcesaRespuestaPeticion(const AComando, AResultado: string);
     procedure InicializaSrv;
     procedure IntentaLevantarServicioCliente;
+    procedure IntentaDetenerServicioCliente;
     procedure EnviarPreciosIniciales;
     procedure ProcesaComandosBD;
     procedure ActualizaEstadoDispensarios;
@@ -743,6 +744,96 @@ begin
 end;
 
 {==============================================================================
+  IntentaDetenerServicioCliente
+  Detiene el servicio Windows de dispensarios via Service Control Manager.
+  Simetrico a IntentaLevantarServicioCliente. Se llama desde FormClose para
+  garantizar que el servicio quede detenido al cerrar la aplicacion.
+==============================================================================}
+
+procedure TFDISBRIDGE.IntentaDetenerServicioCliente;
+const
+  ESPERA_STOP_MS    = 10000;
+  PAUSA_CONSULTA_MS = 500;
+var
+  hSCM, hSrv: SC_HANDLE;
+  st: TServiceStatus;
+  t0, err: DWORD;
+begin
+  hSCM := 0;
+  hSrv := 0;
+  with DMCONS do
+  begin
+    try
+      hSCM := OpenSCManager(nil, nil, SC_MANAGER_CONNECT);
+      if hSCM = 0 then begin
+        err := GetLastError;
+        AgregaLog('ERROR al abrir SCM para detener servicio: ' +
+          IntToStr(err) + ' - ' + SysErrorMessage(err));
+        Exit;
+      end;
+
+      hSrv := OpenService(hSCM, PChar(NombreServicioDisp),
+        SERVICE_QUERY_STATUS or SERVICE_STOP);
+      if hSrv = 0 then begin
+        err := GetLastError;
+        AgregaLog('ERROR al abrir servicio para detener [' +
+          NombreServicioDisp + ']: ' + IntToStr(err) +
+          ' - ' + SysErrorMessage(err));
+        Exit;
+      end;
+
+      if not QueryServiceStatus(hSrv, st) then begin
+        err := GetLastError;
+        AgregaLog('ERROR al consultar estado del servicio [' +
+          NombreServicioDisp + ']: ' + IntToStr(err) +
+          ' - ' + SysErrorMessage(err));
+        Exit;
+      end;
+
+      if st.dwCurrentState = SERVICE_STOPPED then begin
+        AgregaLog('Servicio cliente ya estaba detenido: ' + NombreServicioDisp);
+        Exit;
+      end;
+
+      AgregaLog('Deteniendo servicio cliente: ' + NombreServicioDisp);
+      if not ControlService(hSrv, SERVICE_CONTROL_STOP, st) then begin
+        err := GetLastError;
+        if err <> ERROR_SERVICE_NOT_ACTIVE then begin
+          AgregaLog('ERROR al enviar STOP al servicio [' +
+            NombreServicioDisp + ']: ' + IntToStr(err) +
+            ' - ' + SysErrorMessage(err));
+          Exit;
+        end;
+      end;
+
+      t0 := GetTickCount;
+      repeat
+        Sleep(PAUSA_CONSULTA_MS);
+        if not QueryServiceStatus(hSrv, st) then begin
+          err := GetLastError;
+          AgregaLog('ERROR al consultar avance de detencion del servicio [' +
+            NombreServicioDisp + ']: ' + IntToStr(err) +
+            ' - ' + SysErrorMessage(err));
+          Exit;
+        end;
+        if st.dwCurrentState = SERVICE_STOPPED then begin
+          AgregaLog('Servicio cliente detenido correctamente: ' + NombreServicioDisp);
+          Exit;
+        end;
+      until (GetTickCount - t0) >= ESPERA_STOP_MS;
+
+      AgregaLog('ADVERTENCIA: el servicio cliente no llego a STOPPED dentro del tiempo esperado [' +
+        NombreServicioDisp + ']. Estado=' + IntToStr(st.dwCurrentState));
+    finally
+      if hSrv <> 0 then
+        CloseServiceHandle(hSrv);
+      if hSCM <> 0 then
+        CloseServiceHandle(hSCM);
+    end;
+  end;
+end;
+
+{==============================================================================
   FormShow - Arranque del sistema
 ==============================================================================}
 
@@ -815,6 +906,11 @@ begin
   end;
 
   try SSocketPDisp.Active := false; except end;
+
+  { Detener el servicio Windows de dispensarios via SCM }
+  try
+    IntentaDetenerServicioCliente;
+  except end;
 
   { Liberar }
   if Assigned(ListaPeticiones) then begin
