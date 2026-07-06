@@ -9,7 +9,7 @@ uses Variants,
   SIBFIBEA, FIBDatabase, pFIBDatabase;
 
 
-const MaxComb=9;
+const MaxComb=4;
       LitrosXGalon=3.7854;
       MargenTurnoAdmin=0.5/24;
 

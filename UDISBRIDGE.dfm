@@ -3,8 +3,8 @@ object FDISBRIDGE: TFDISBRIDGE
   Top = 131
   BorderStyle = bsSingle
   Caption = 
-    'I-Gas Consola de Dispensarios V2 (Bridge)   -   I-Gas Volum'#233'tric' +
-    'o'
+    'I-Gas Consola de Dispensarios Versi'#243'n 4.3.3.0   -   I-Gas Volum'#233 +
+    'trico'
   ClientHeight = 517
   ClientWidth = 711
   Color = clBtnFace
@@ -3897,14 +3897,6 @@ object FDISBRIDGE: TFDISBRIDGE
           ItemHeight = 13
           TabOrder = 0
           OnClick = ListBox1Click
-        end
-        object StaticText7: TStaticText
-          Left = 16
-          Top = 320
-          Width = 58
-          Height = 17
-          Caption = 'StaticText7'
-          TabOrder = 1
         end
       end
       object ListBoxPC1: TListBox

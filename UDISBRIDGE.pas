@@ -109,7 +109,6 @@ type
     Label4x: TLabel;
     StaticText9: TStaticText;
     Button3: TButton;
-    StaticText7: TStaticText;
     DBGrid3: TDBGrid;
     ListView1: TListView;
     Image1: TImage;
@@ -162,6 +161,7 @@ type
     SrvEnEjecucion  : Boolean;
     HoraInicializado: TDateTime;
     PuertoSrv       : Integer;
+    SwHaspErrorMostrado: Boolean; { Evita repetir el mensaje de error HASP en cada reintento }
     function  NuevoFolioSrv: Integer;
     function  ComandoUsaRespCmnd(const AComando: string): Boolean;
     function  ExtraeFolioCmnd(const AComando, AResultado: string; var AFolioCmnd: Integer): Boolean;
@@ -637,11 +637,10 @@ begin
   SrvInicializado := False;
   SrvEnEjecucion := False;
   HoraInicializado := 0;
+  SwHaspErrorMostrado := False;
 
   { Leer puerto del servicio de dispensarios (default 1004) }
   PuertoSrv := 1004; // Se puede cargar de INI/BD
-
-  StaticText7.Caption := ' Bridge';
 end;
 
 {==============================================================================
@@ -934,7 +933,6 @@ begin
   SrvConectado := True;
   ContadorAlarma := 0;
   DMCONS.AgregaLog('Srv dispensarios conectado desde ' + Socket.RemoteAddress);
-  StaticText7.Caption := ' Srv: ' + Socket.RemoteAddress;
   Label4x.Caption := 'On';
   Label4x.Visible := true;
 end;
@@ -945,8 +943,8 @@ begin
   SrvInicializado := False;
   SrvEnEjecucion := False;
   HoraInicializado := 0;
+  SwHaspErrorMostrado := False;
   DMCONS.AgregaLog('Srv dispensarios desconectado');
-  StaticText7.Caption := ' Srv: Desconectado ';
   Label4x.Caption := 'Off';
   if Assigned(ListaPeticiones) then begin
     ListaPeticiones.Clear;
@@ -1630,10 +1628,30 @@ begin
   else if SameText(AComando, 'RUN') then begin
     if exito then begin
       SrvEnEjecucion := True;
+      SwHaspErrorMostrado := False;
       DMCONS.AgregaLog('Srv RUN exitoso - Servicio en ejecucion');
     end
-    else
+    else begin
       DMCONS.AgregaLog('ERROR: Srv RUN fallo: ' + AResultado);
+      { Caso especifico: el servicio de dispensarios no pudo validar la llave HASP.
+        Se notifica al operador con un mensaje de error, una sola vez por intento
+        de conexion, para evitar repetirlo en cada reintento del Timer1. }
+      if (Pos('HASP', UpperCase(AResultado)) > 0) and (not SwHaspErrorMostrado) then begin
+        SwHaspErrorMostrado := True;
+        MessageDlg('No fue posible validar la licencia HASP en el servicio de dispensarios.' +
+          sLineBreak + sLineBreak +
+          'Detalle: ' + Trim(ExtraeElemStrSep(AResultado, 2, '|')) +
+          sLineBreak + sLineBreak +
+          'El servicio no podra operar hasta que la llave de proteccion HASP sea valida.' +
+          sLineBreak + sLineBreak +
+          'El servicio de dispensarios sera detenido y el modulo Bridge se cerrara.',
+          mtError, [mbOK], 0);
+        { Igual que con el comando CERRAR: detener el servicio de dispensarios
+          (HALT/SHUTDOWN + SCM, manejado en FormClose) y cerrar el modulo Bridge. }
+        SwCerrar := True;
+        Close;
+      end;
+    end;
   end
   else if SameText(AComando, 'PRICES') then begin
     if exito then begin
