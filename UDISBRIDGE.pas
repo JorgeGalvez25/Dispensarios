@@ -113,7 +113,6 @@ type
     Image1: TImage;
     NotificationIcon1: TRxTrayIcon;
     StaticText8: TStaticText;
-    TL_TcmbIDPRODUCTOOG: TIntegerField;
     CheckBox1: TCheckBox;
     Label1: TLabel;
     Memo2: TMemo;
@@ -575,10 +574,6 @@ begin
               existe := true;
           if not existe then begin
             TL_Tcmb.Locate('CLAVE', xcomb, []);
-            if TL_TcmbIDPRODUCTOOG.AsInteger <= 0 then begin
-              Q_BombIb.Next;
-              Continue;
-            end;
             inc(NoComb);
             TComb[NoComb] := xcomb;
             TL_Tcmb.Locate('CLAVE', xcomb, []);
@@ -1336,7 +1331,7 @@ begin
           if (SecondsBetween(UltimoCmnd, Now) > 3) and (finventa = 0) and (estatus = 3) then begin
             finventa := 0;
             TipoPago := 0;
-            EnviaComandoSrv('PAYMENT', IntToStr(xpos) + '|0');
+            EnviaComandoSrv('PAYMENT', IntToStr(xpos));
             UltimoCmnd := Now;
           end;
 
@@ -2012,8 +2007,7 @@ begin
               TPosCarga[xpos].tipopago := StrToIntDef(ExtraeElemStrSep(TabCmnd[xcmnd].Comando, 3, ' '), 0);
               if (TPosCarga[xpos].Estatus in [1, 3]) then begin
                 TPosCarga[xpos].finventa := 0;
-                EnviaComandoSrv('PAYMENT', IntToStr(xpos) + '|' + IntToStr(TPosCarga[xpos].tipopago),
-                  xcmnd, TabCmnd[xcmnd].Comando);
+                EnviaComandoSrv('PAYMENT', IntToStr(xpos), xcmnd, TabCmnd[xcmnd].Comando);
                 SwAplicaCmnd := False;
                 { Actualizar tipo de pago de ultima venta }
                 try
