@@ -4148,7 +4148,7 @@ object FDISBRIDGE: TFDISBRIDGE
         Width = 97
         Height = 17
         Caption = 'CheckBox2'
-        TabOrder = 8
+        TabOrder = 7
       end
       object Memo1: TMemo
         Left = 298
@@ -4156,14 +4156,6 @@ object FDISBRIDGE: TFDISBRIDGE
         Width = 153
         Height = 95
         TabOrder = 0
-      end
-      object StaticText18: TStaticText
-        Left = 296
-        Top = 168
-        Width = 64
-        Height = 17
-        Caption = 'StaticText18'
-        TabOrder = 6
       end
       object Button1: TButton
         Left = 7
@@ -4200,14 +4192,14 @@ object FDISBRIDGE: TFDISBRIDGE
         Caption = 'Guardar Log cada 10 min'
         Checked = True
         State = cbChecked
-        TabOrder = 7
+        TabOrder = 6
       end
       object Memo2: TMemo
         Left = 7
         Top = 268
         Width = 297
         Height = 102
-        TabOrder = 9
+        TabOrder = 8
       end
       object Button2: TButton
         Left = 46
@@ -4215,7 +4207,7 @@ object FDISBRIDGE: TFDISBRIDGE
         Width = 165
         Height = 33
         Caption = 'Guardar Log'#13#10'PDispensarios'
-        TabOrder = 10
+        TabOrder = 9
         OnClick = Button2Click
       end
     end

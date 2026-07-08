@@ -103,7 +103,6 @@ type
     TL_TcmbCON_PRODUCTOPRECIO: TStringField;
     TL_TcmbPRECIOFISICO: TFloatField;
     StaticText17: TStaticText;
-    StaticText18: TStaticText;
     Button1: TButton;
     PageControl1: TPageControl;
     Label4x: TLabel;
@@ -583,10 +582,7 @@ begin
             inc(NoComb);
             TComb[NoComb] := xcomb;
             TL_Tcmb.Locate('CLAVE', xcomb, []);
-            if TL_TcmbIDPRODUCTOOG.AsInteger > 0 then
-              TCombx[NoComb] := TL_TcmbIDPRODUCTOOG.AsInteger
-            else
-              TCombx[NoComb] := xcomb;
+            TCombx[NoComb] := xcomb;
             if (xcomb = 3) then
               esDiesel := True;
             if Q_BombIbCon_Posicion.AsInteger > 0 then
