@@ -1738,7 +1738,7 @@ begin
         jsMangueras := TlkJSONlist.Create;
         for j := 1 to TPosCarga[i].NoComb do begin
           jsManguera := TlkJSONobject.Create;
-          jsManguera.Add('HoseId', TPosCarga[i].TMang[j]);
+          jsManguera.Add('HoseId', TPosCarga[i].TPosx[j]);
           jsManguera.Add('ProductId', TPosCarga[i].TCombx[j]);
           jsMangueras.Add(jsManguera);
         end;

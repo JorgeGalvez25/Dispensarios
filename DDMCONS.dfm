@@ -1155,7 +1155,7 @@ object DMCONS: TDMCONS
       '          team_nodisp,team_lado,hj_addr,hj_lado,impretarjetas'
       'from dpvgbomb'
       'where poscarga>=1 and poscarga<=99 and Activo='#39'Si'#39
-      'order by poscarga,combustible'
+      'order by poscarga,con_posicion'
       '')
     Left = 168
     Top = 368
