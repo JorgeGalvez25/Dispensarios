@@ -1872,6 +1872,8 @@ begin
         else if ss = 'GLOG' then begin
           rsp := 'OK';
           Button1.Click;
+          Button2.Click;
+          Button3.Click;
         end
         { AMP - Activa Modo Prepago }
         else if ss = 'AMP' then begin
@@ -2186,7 +2188,7 @@ begin
       EnviaComandoSrv('STOP', IntToStr(xpos));
 
     if TPosCarga[xpos].FinVenta = 1 then
-      efv := '2'
+      efv := '0'
     else
       efv := '1';
 
