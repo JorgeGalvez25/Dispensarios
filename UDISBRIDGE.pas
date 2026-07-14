@@ -1,16 +1,4 @@
 unit UDISBRIDGE;
-{==============================================================================
-  UDISBRIDGE V2 - Comunicacion directa con servicio de dispensarios
-  =============================================================================
-  ELIMINADO:  ogcvgateway (OpenGas), UIGASBRIDGE, Socket1/Socket2 (TClientSocket)
-  NUEVO:      SSocketPDisp (TServerSocket) - JSON polling inverso con servicio de dispensarios
-  PROTOCOLO:
-    - El servicio de dispensarios se conecta como cliente a SSocketPDisp
-    - Envia su estado en JSON (o "PING" si aun no esta inicializado)
-    - Este servidor responde con el siguiente comando pendiente
-      en formato  folio|DISPENSERS|COMANDO|parametros
-      o bien  0|NOTHING  si no hay comandos
-  =============================================================================}
 
 interface
 
@@ -40,7 +28,6 @@ type
     ConsultasRespCmnd: Integer;
   end;
 
-  { ---- TPeticionQueue: cola thread-safe ---- }
   TPeticionQueue = class
   private
     FList : TList;
@@ -274,12 +261,7 @@ uses ULIBGRAL, ULIBLICENCIAS, DDMCONS, UDISMENU, StrUtils, Math, WinSvc;
 
 {$R *.DFM}
 
-{ Forward declaration }
 function EjecutaCorte: string; forward;
-
-{==============================================================================
-  TPeticionQueue - Cola thread-safe (basada en UIGASBRIDGE)
-==============================================================================}
 
 constructor TPeticionQueue.Create;
 begin
@@ -430,9 +412,6 @@ begin
   end;
 end;
 
-{==============================================================================
-  Funciones conservadas tal cual del original
-==============================================================================}
 
 procedure TFDISBRIDGE.DespliegaPrecios;
 var i: integer;
@@ -607,10 +586,6 @@ begin
       ListBox1.Items.add('Posiciones ' + IntToClaveNum(i * 4 - 3, 2) + ' - ' + IntToClaveNum(MaxPosCarga, 2));
   end;
 end;
-
-{==============================================================================
-  FormCreate - Inicializacion
-==============================================================================}
 
 procedure TFDISBRIDGE.FormCreate(Sender: TObject);
 begin
@@ -2158,11 +2133,6 @@ begin
   end;
 end;
 
-{==============================================================================
-  EnviaPreset3 - Autorizacion de carga
-  Ahora usa EnviaComandoSrv('AUTHORIZE',...) en lugar de ComandoConsolaBuff
-==============================================================================}
-
 procedure TFDISBRIDGE.EnviaPreset3(var rsp: string; xcomb: integer;
   ACmndBDIndex: Integer; const ACmndBDTexto: string);
 var xpos, xc, xp: integer;
@@ -2245,13 +2215,6 @@ begin
       DMCONS.AgregaLog('ERROR PRESET 3: ' + e.Message);
   end;
 end;
-
-{==============================================================================
-  Timer1Timer - Timer principal simplificado
-  =============================================================================
-  Ya NO hace polling activo. servicio de dispensarios inicia la comunicacion.
-  Solo monitorea la conexion y ejecuta tareas periodicas.
-==============================================================================}
 
 procedure TFDISBRIDGE.Timer1Timer(Sender: TObject);
 var i: integer;
@@ -2364,10 +2327,6 @@ begin
     end;
   end;
 end;
-
-{==============================================================================
-  DespliegaPosCarga - Visualizacion (conservada del original)
-==============================================================================}
 
 procedure TFDISBRIDGE.DespliegaPosCarga(xpos: integer; swforza: boolean);
 var i, ii, xp, rango, posi, posf, xcomb, xc, apunt, xmang: integer;
@@ -2527,10 +2486,6 @@ begin
   end;
 end;
 
-{==============================================================================
-  EjecutaCorte (funcion libre conservada del original)
-==============================================================================}
-
 function EjecutaCorte: string;
 var rsp, Descrsp: string;
     xpos, xpr, xcomb: integer;
@@ -2583,10 +2538,6 @@ begin
     Result := rsp;
   end;
 end;
-
-{==============================================================================
-  Funciones de utilidad conservadas del original
-==============================================================================}
 
 function TFDISBRIDGE.CombustibleEnPosicion(xpos, xposcarga: integer): integer;
 var i: integer;
