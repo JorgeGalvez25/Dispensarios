@@ -989,7 +989,7 @@ begin
       Exit;
     end;
 
-    Socket.SendText('0|NOTHING');
+    Socket.SendText('0|DISPENSERS|NOTHING');
   except
     on e: Exception do
       DMCONS.AgregaLog('Error SSocketPDispClientRead: ' + e.Message);
